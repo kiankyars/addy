@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import GeneratedAdsList from "./list";
 
 export default function Generated() {
@@ -8,7 +9,9 @@ export default function Generated() {
         <Image src="/headphone.png" width={64} height={64} alt="Adible logo" />
         Adible Podcasts
       </h1>
-      <GeneratedAdsList />
+      <Suspense fallback={<p>Loading…</p>}>
+        <GeneratedAdsList />
+      </Suspense>
     </div>
   );
 }

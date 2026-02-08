@@ -15,12 +15,12 @@ export const Poll = () => {
     const interval = setInterval(async () => {
       try {
         const response = await fetch(
-          `http://localhost:4001/stitched-audio/${id}`
+          `/stitched-audio/${id}`
         );
         const data = await response.json();
         setProcessingStatus(data.processing_status);
 
-        if (data.processing_status === "COMPLETE") {
+        if (data.processing_status === "complete") {
           clearInterval(interval);
         }
       } catch (error) {
@@ -33,7 +33,7 @@ export const Poll = () => {
 
   return (
     <div className="flex flex-col items-center justify-center w-full">
-      {processingStatus !== "COMPLETE" ? (
+      {processingStatus !== "complete" ? (
         <div className="flex items-center justify-center h-full">
           <p className="text-2xl">
             {sentenceCase(processingStatus ?? "Processing")}
@@ -43,7 +43,7 @@ export const Poll = () => {
         <audio
           className="w-full"
           controls
-          src={`http://localhost:4001/stitched-audio/${id}/bytes`}
+          src={`/stitched-audio/${id}/bytes`}
         />
       )}
     </div>

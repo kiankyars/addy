@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import { Poll } from "./poll";
 
 export default function Result() {
@@ -9,7 +10,9 @@ export default function Result() {
         Adible Podcasts
       </h1>
       <div className="flex flex-col w-full items-center justify-center">
-        <Poll />
+        <Suspense fallback={<p>Loading…</p>}>
+          <Poll />
+        </Suspense>
       </div>
     </div>
   );

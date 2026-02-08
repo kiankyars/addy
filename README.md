@@ -1,51 +1,45 @@
 ## How it works
 
-1. **Input** — You paste a **YouTube URL or video ID** in the podcast UI.
-2. **Transcript** — Backend uses **youtube_transcript_api** to fetch the captions (no upload, no STT).
-3. **Ad placement** — **Anthropic Claude** reads the transcript and a list of **sponsors** (from `config/sponsors.json`) and picks where each ad fits.
-4. **Ad copy** — For each placement, Claude writes a **segue**, **content**, and **exit** in the tone of the show.
-5. **TTS** — **Cartesia Sonic** turns each ad into audio with the default Dwarkesh voice.
-6. **Stitch** — You pick one generated ad in the UI; the backend inserts it into the original (audio from **yt-dlp**) and you download the stitched file.
+1. **Input** — You paste a **YouTube URL or video ID** in the UI.
+2. **Transcript** — Backend uses **youtube_transcript_api** to fetch the captions.
+3. **Ad placement** — **Anthropic Claude** reads the transcript and **sponsors** (`config/sponsors.json`) and picks where each ad fits.
+4. **Ad copy** — For each placement, Claude writes **segue**, **content**, and **exit** in the tone of the show.
+5. **TTS** — **Cartesia Sonic** turns each ad into audio (default Dwarkesh voice).
+6. **Stitch** — You pick one generated ad; the backend inserts it into the original (audio from **yt-dlp**); you download the stitched file.
 
-**Stack:** No SQL. FastAPI (in-memory job store), Next.js (podcast UI). Sponsors are loaded from a JSON config file.
+**Stack:** One app. FastAPI serves the API and the static UI (Next.js export). No SQL; sponsors from JSON.
 
 ---
 
-## Step-by-step
+## Run
 
-### 1. Backend
+### 1. Backend deps + env
 
 ```bash
 cd server/recorded
 cp sample.env .env
+# Set ANTHROPIC_API_KEY and CARTESIA_API_KEY
+uv pip install -r requirements.txt
 ```
 
-Edit `.env`: set `ANTHROPIC_API_KEY` and `CARTESIA_API_KEY`.
-
-Install and run:
+### 2. Build the UI (once)
 
 ```bash
-uv pip install -r requirements.txt
+cd server/recorded/web
+pnpm install
+pnpm build
+```
+
+### 3. Start the app (API + UI on one port)
+
+```bash
+cd server/recorded
 uvicorn app:app --host 0.0.0.0 --port 4001
 ```
 
-Optional: edit `config/sponsors.json` to change sponsors (array of `id`, `url`, `title`, `content`, `tags`). You can pass a different path via `POST /process` body: `{ "video_id": "...", "sponsors_config": "/path/to/sponsors.json" }`.
+Open http://localhost:4001 — same origin for UI and API.
 
-### 2. Frontend
-
-```bash
-cd podcast
-pnpm install
-pnpm dev
-```
-
-Open the URL (e.g. http://localhost:3000).
-
-### 3. Flow
-
-1. Enter a YouTube URL or video ID and click Process. The backend fetches the transcript, downloads audio with yt-dlp, runs placement + copy + TTS in the background.
-2. When processing is complete you’re taken to the generated-ads view. Listen to each option and pick one.
-3. Click to stitch; then download the stitched audio from the result page.
+Optional: edit `config/sponsors.json` (or pass `sponsors_config` in `POST /process` body).
 
 ---
 
@@ -53,7 +47,5 @@ Open the URL (e.g. http://localhost:3000).
 
 | Path | Purpose |
 |------|--------|
-| **server/recorded/** | FastAPI app, YouTube transcript + yt-dlp, sponsors JSON, Anthropic + Cartesia TTS, in-memory jobs, stitching. |
-| **podcast/** | Next.js UI: YouTube input, poll job, pick ad, stitch, download. |
-
-API base: `http://localhost:4001` (see `podcast/src/app/uploader.tsx` and related fetch calls).
+| **server/recorded/** | FastAPI app: API routes + static serve of `web/out`. Pipeline, config, voices. |
+| **server/recorded/web/** | Next.js UI (YouTube input, poll, pick ad, stitch, download). Build with `pnpm build` → `web/out`. |

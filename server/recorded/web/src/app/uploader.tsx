@@ -29,7 +29,7 @@ const Uploader = () => {
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch("http://localhost:4001/process", {
+      const res = await fetch("/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video_id: videoId }),
@@ -86,7 +86,7 @@ const Process = ({
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      const res = await fetch(`http://localhost:4001/audio_files/${jobId}`);
+      const res = await fetch(`/audio_files/${jobId}`);
       if (!res.ok) return;
       const data = await res.json();
       setStatus(data.processing_status);

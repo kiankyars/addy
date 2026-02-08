@@ -61,7 +61,7 @@ const GeneratedAdsList = () => {
     try {
       setLoading(true);
       const response = await fetch(
-        "http://localhost:4001/insert-advertisement-audio",
+        "/insert-advertisement-audio",
         {
           method: "POST",
           headers: {
@@ -115,7 +115,7 @@ const GeneratedAdsList = () => {
                       onChange={() => setSelectedAdId(ad.id)}
                     />
                     <AudioPlayer
-                      src={`http://localhost:4001/generated-ad/${ad.id}`}
+                      src={`/generated-ad/${ad.id}`}
                     />
                   </div>
                 ))}

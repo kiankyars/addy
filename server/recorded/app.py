@@ -1,8 +1,13 @@
+from pathlib import Path
 from uuid import uuid4
-from fastapi import FastAPI, Response, BackgroundTasks, Header
+from fastapi import FastAPI, Response, BackgroundTasks, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
+
+STATIC_DIR = Path(__file__).resolve().parent / "web" / "out"
+API_PREFIXES = ("process", "audio_files", "generated-ad", "insert-advertisement-audio", "stitched-audio")
 
 from pipeline import (
     start_job,
@@ -166,6 +171,22 @@ def get_stitched_audio_bytes(stitched_audio_id: str, range: str = Header(None)):
         media_type="audio/mpeg",
         headers={"Accept-Ranges": "bytes", "Content-Length": str(content_length)},
     )
+
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    """Serve static export or index.html for SPA routing."""
+    if any(full_path.startswith(p) for p in API_PREFIXES):
+        raise HTTPException(status_code=404)
+    if ".." in full_path:
+        raise HTTPException(status_code=404)
+    base = STATIC_DIR / full_path.rstrip("/") if full_path else STATIC_DIR
+    for candidate in (base, base.with_suffix(".html"), base / "index.html"):
+        if candidate.is_file():
+            return FileResponse(candidate)
+    if (STATIC_DIR / "index.html").exists():
+        return FileResponse(STATIC_DIR / "index.html")
+    raise HTTPException(status_code=404)
 
 
 if __name__ == "__main__":

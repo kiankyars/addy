@@ -23,6 +23,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!recorded/web/src/lib
+!recorded/web/src/lib/
 parts/
 sdist/
 var/
