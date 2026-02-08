@@ -22,16 +22,15 @@ anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 cartesia_client = Cartesia(api_key=CARTESIA_API_KEY)
 
 LLM_MODEL = Literal["claude", "gemini"]
-_gemini_model = None
+_gemini_client = None
 
 
-def _get_gemini_model():
-    global _gemini_model
-    if _gemini_model is None:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        _gemini_model = genai.GenerativeModel("gemini-2.0-flash")
-    return _gemini_model
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        from google import genai
+        _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
+    return _gemini_client
 
 
 def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) -> str:
@@ -44,10 +43,17 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
         )
         return (response.content[0].text or "").rstrip()
     if model == "gemini":
-        genai = _get_gemini_model()
-        from google.generativeai.types import GenerationConfig
-        config = GenerationConfig(stop_sequences=stop_sequences, max_output_tokens=2048)
-        response = genai.generate_content(prompt, generation_config=config)
+        from google.genai import types
+        client = _get_gemini_client()
+        config = types.GenerateContentConfig(
+            stop_sequences=stop_sequences,
+            max_output_tokens=2048,
+        )
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=config,
+        )
         return (response.text or "").rstrip()
     raise ValueError(f"Unknown model: {model}")
 
