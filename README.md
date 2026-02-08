@@ -1,31 +1,23 @@
-# Addy — Cartesia x Anthropic voice agent
+<p align="center">
+    <img src="./misc/headphone.png" alt="Banner" height="300px" width="300px"/>
+</p>
 
-Voice agent built with [Cartesia Line SDK](https://github.com/cartesia-ai/line) and [Anthropic Claude](https://anthropic.com), for the Cartesia x Anthropic hackathon.
+<h1 align="center">Adible</h1>
+<h3 align="center">Weave ads seamlessly into conversational AI, podcasts and more.</h3>
 
-- **Stack:** Line (voice agent framework), Cartesia Sonic (TTS), Anthropic Claude Haiku 4.5 (reasoning).
-- **Tools:** `end_call`, `web_search` (situationally aware).
+## Stack (Cartesia x Anthropic)
 
-## Setup
+- **voice-agent/** — Dwarkesh-style podcast voice agent (Cartesia Line + Anthropic Claude, optional voice cloning).
+- **conversational-agent/** — Web landing + call CTA for the voice agent.
+- **server/recorded/** — Podcast ad pipeline: Whisper (OpenAI) for transcription, Anthropic for ad placement/copy/voice choice, Cartesia for TTS.
+- **podcast/** & **web/** — Upload and results UIs.
 
-1. [Cartesia account](https://play.cartesia.ai) and [Anthropic API key](https://platform.claude.com/settings/keys).
-2. Install [Cartesia CLI](https://docs.cartesia.ai/line/start-building/quickstart) and [uv](https://docs.astral.sh/uv/):
+### Quick start (voice agent)
 
-   ```bash
-   curl -fsSL https://cartesia.sh | sh
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
+```bash
+cd voice-agent && uv sync
+ANTHROPIC_API_KEY=... PORT=8000 uv run python main.py
+# In another terminal: cartesia chat 8000
+```
 
-3. From repo root:
-
-   ```bash
-   cd voice-agent
-   cp .env.example .env   # set ANTHROPIC_API_KEY
-   uv sync
-   ANTHROPIC_API_KEY=your-key PORT=8000 uv run python main.py
-   ```
-
-4. In another terminal: `cartesia chat 8000` (text) or use [Cartesia Playground](https://play.cartesia.ai/agents) to deploy and call.
-
-## License
-
-Apache 2.0.
+See `voice-agent/README.md` for deploy and voice cloning.

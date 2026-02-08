@@ -1,9 +1,14 @@
 [project]
-name = "addy-voice-agent"
+name = "voice-agent"
 version = "0.1.0"
-description = "Cartesia x Anthropic voice agent (Line SDK)"
+description = "Dwarkesh podcast voice agent — Anthropic + Cartesia Line"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "cartesia-line>=0.2.2",
-    "loguru>=0.7.0",
+    "cartesia-line",
+    "python-dotenv",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = []
+only-include = ["main.py"]

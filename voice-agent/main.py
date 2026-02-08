@@ -1,39 +1,47 @@
+"""
+Dwarkesh podcast voice agent — Cartesia Line + Anthropic.
+Use a cloned voice at play.cartesia.ai/voices/create/clone and set CARTESIA_VOICE_ID.
+"""
 import os
+from dotenv import load_dotenv
 
-from loguru import logger
-
-from line.llm_agent import LlmAgent, LlmConfig, end_call, web_search
 from line.voice_agent_app import AgentEnv, CallRequest, VoiceAgentApp
+from line.llm_agent import LlmAgent, LlmConfig, end_call
 
-SYSTEM_PROMPT = """You are a friendly voice assistant built with Cartesia and Claude.
+load_dotenv()
 
-Be warm, concise, and natural. Keep replies to 1–2 sentences. Use contractions.
-Never use lists or bullet points—speak in prose.
-Use web_search when you need current information. Say a brief goodbye then use end_call when the conversation is clearly over."""
+DWARKESH_SYSTEM = """You are the host of a thoughtful long-form podcast in the style of Dwarkesh Patel.
+You ask deep, specific questions and follow up on interesting points. You're curious about technology,
+AI, startups, and big ideas. You let the guest (the caller) lead at times but steer toward substance.
+Keep responses concise for voice — a few sentences at a time. Be warm and intellectually curious."""
 
-INTRODUCTION = "Hey! What would you like to talk about?"
+INTRO = "Hey, welcome to the show. What's on your mind today?"
 
 
 async def get_agent(env: AgentEnv, call_request: CallRequest):
-    logger.info(
-        f"Starting call {call_request.call_id}. "
-        f"Prompt: {call_request.agent.system_prompt or 'default'}, "
-        f"Intro: {call_request.agent.introduction or 'default'}"
-    )
+    config = LlmConfig.from_call_request(call_request)
+    if config.system_prompt is None or config.system_prompt.strip() == "":
+        config = config.model_copy(update={"system_prompt": DWARKESH_SYSTEM})
+    if config.introduction is None or config.introduction.strip() == "":
+        config = config.model_copy(update={"introduction": INTRO})
+
     return LlmAgent(
         model="anthropic/claude-haiku-4-5-20251001",
         api_key=os.getenv("ANTHROPIC_API_KEY"),
-        tools=[end_call, web_search],
-        config=LlmConfig.from_call_request(
-            call_request,
-            fallback_system_prompt=SYSTEM_PROMPT,
-            fallback_introduction=INTRODUCTION,
-        ),
+        tools=[end_call],
+        config=config,
     )
 
 
-app = VoiceAgentApp(get_agent=get_agent)
+def pre_call_handler(call_request: CallRequest):
+    voice_id = os.getenv("CARTESIA_VOICE_ID")
+    if not voice_id:
+        return None
+    from line.voice_agent_app import PreCallResult
+    return PreCallResult(config={"tts": {"voice": voice_id, "model": "sonic-2", "language": "en"}})
+
+
+app = VoiceAgentApp(get_agent=get_agent, pre_call_handler=pre_call_handler)
 
 if __name__ == "__main__":
-    print("Starting voice agent")
     app.run()
