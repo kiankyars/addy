@@ -62,12 +62,11 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
             max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents=prompt,
             config=config,
         )
         return (response.text or "").rstrip()
-    raise ValueError(f"Unknown model: {model}")
 
 
 import re as _re
@@ -156,6 +155,8 @@ class GeneratedAdvertisementText(BaseModel):
     segue: str
     content: str
     exit: str
+    emotion: str | None = None
+    speed: float | None = None
 
 
 def get_youtube_transcript(video_id: str) -> list[TranscriptionSegment]:
@@ -425,7 +426,16 @@ def determine_ad_placement(
     else:
         placements = _determine_ad_placement(transcription_segments, available_ads, model)
 
-    return placements
+    # Enforce "each sponsor at most once" even if the model repeats sponsors.
+    seen_ad_ids: set[str] = set()
+    deduped: list[AdvertisementPlacement] = []
+    for placement in placements:
+        ad_id = placement.determined_advertisement.id
+        if ad_id in seen_ad_ids:
+            continue
+        seen_ad_ids.add(ad_id)
+        deduped.append(placement)
+    return deduped
 
 def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText]:
     root = ET.fromstring(xml_content)
@@ -435,7 +445,19 @@ def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText
         segue = ad.find('segue').text
         content = ad.find('content').text
         exit = ad.find('exit').text
-        advertisements.append(GeneratedAdvertisementText(segue=segue, content=content, exit=exit))
+        emotion_el = ad.find('emotion')
+        speed_el = ad.find('speed')
+        emotion = emotion_el.text.strip() if emotion_el is not None and emotion_el.text else None
+        speed = None
+        if speed_el is not None and speed_el.text:
+            try:
+                speed = float(speed_el.text.strip())
+            except ValueError:
+                pass
+        advertisements.append(GeneratedAdvertisementText(
+            segue=segue, content=content, exit=exit,
+            emotion=emotion, speed=speed,
+        ))
 
     return advertisements
 
@@ -522,6 +544,8 @@ Please follow the below rules when generating the advertisements:
 3. The ending of the advertisement should be a segue back to the show.
 4. Always provide three variations of the same advertisement.
 5. Try to match the language used by the segments.
+6. For each advertisement, include an <emotion> tag describing the vocal emotion for TTS (e.g. "curiosity", "excitement", "warmth", "confidence"). Pick the emotion that best fits the sponsor and conversation tone.
+7. For each advertisement, include a <speed> tag with a speaking speed multiplier (float between 0.7 and 1.3). Use slightly faster for energetic ads, slightly slower for premium/serious sponsors. Default is 1.0.
 
 Please respond in the format provided between the <example></example> tags.
 <example>
@@ -537,6 +561,8 @@ keep it short and concise
 <exit>
 the exit of the content
 </exit>
+<emotion>excitement</emotion>
+<speed>1.1</speed>
 </advertisement>
 </advertisements>
 </response>
@@ -556,33 +582,77 @@ def generate_advertisements(
     transcription_segments: list[TranscriptionSegment],
     model: LLM_MODEL = "claude",
 ) -> List[GeneratedAdvertisementText]:  
+    surrounding_segments = _collect_surrounding_segments(ad_placement, transcription_segments)
+    return _generate_advertisement_text(ad_placement, surrounding_segments, model)
+
+
+def _collect_surrounding_segments(
+    ad_placement: AdvertisementPlacement,
+    transcription_segments: list[TranscriptionSegment],
+) -> list[TranscriptionSegment]:
     surrounding_segments = []
     segment_nos = {segment.no: segment for segment in transcription_segments}
-
     for offset in [-2, -1, 1, 2]:
         target_no = ad_placement.transcription_segment.no + offset
         if target_no in segment_nos:
             surrounding_segments.append(segment_nos[target_no])
+    return surrounding_segments
 
-    return _generate_advertisement_text(ad_placement, surrounding_segments, model)
+
+def select_best_advertisement(
+    ad_placement: AdvertisementPlacement,
+    transcription_segments: list[TranscriptionSegment],
+    candidates: List[GeneratedAdvertisementText],
+    model: LLM_MODEL = "claude",
+) -> int:
+    """Return the 0-based index of the best ad candidate. Falls back to 0 on parse failure."""
+    surrounding_segments = _collect_surrounding_segments(ad_placement, transcription_segments)
+    segment_context = "\n".join(
+        f"- {seg.text}" for seg in [ad_placement.transcription_segment, *surrounding_segments]
+    )
+    ads_text = "\n\n".join(
+        [
+            f"Ad {i+1}:\nSegue: {c.segue}\nContent: {c.content}\nExit: {c.exit}"
+            for i, c in enumerate(candidates)
+        ]
+    )
+    prompt = (
+        "You are selecting the single best ad read for a podcast. "
+        "Pick the ad that best fits the conversation flow, sounds natural, and is concise.\n\n"
+        f"Conversation context:\n{segment_context}\n\n"
+        f"Candidates:\n{ads_text}\n\n"
+        "Respond with only the number 1, 2, or 3."
+    )
+    raw = _llm_completion(prompt, ["\n"], model)
+    match = _re.search(r"\b([1-3])\b", raw.strip())
+    if not match:
+        return 0
+    return int(match.group(1)) - 1
 
 def generate_advertisement_audio(
     advertisement_text: str,
     voice_id: str,
     file_path: str | None = None,
+    emotion: str | None = None,
+    speed: float | None = None,
 ) -> str:
-    chunks = list(
-        cartesia_client.tts.bytes(
-            model_id="sonic-2",
-            transcript=advertisement_text,
-            voice={"id": voice_id},
-            language="en",
-            output_format={"container": "mp3", "sample_rate": 44100, "bit_rate": 128000},
-        )
+    tts_kwargs = dict(
+        model_id="sonic-3",
+        transcript=advertisement_text,
+        voice={"id": voice_id},
+        language="en",
+        output_format={"container": "mp3", "sample_rate": 44100, "bit_rate": 128000},
     )
+    if emotion or speed:
+        gen_config = {}
+        if emotion:
+            gen_config["emotion"] = emotion
+        if speed:
+            gen_config["speed"] = speed
+        tts_kwargs["generation_config"] = gen_config
+    chunks = list(cartesia_client.tts.bytes(**tts_kwargs))
     audio_bytes = b"".join(chunks)
     save_file_path = file_path or f"{uuid.uuid4()}.mp3"
     with open(save_file_path, "wb") as f:
         f.write(audio_bytes)
     return save_file_path
-

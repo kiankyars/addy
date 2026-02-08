@@ -4,3 +4,4 @@ __pycache__
 *.pyc
 *.db
 node_modules
+output

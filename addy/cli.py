@@ -2,14 +2,15 @@
 Addy: YouTube → transcript → placement → copy → TTS → N ad MP3s.
 All settings from dwarkesh.json (video, output, model, voice, sponsors).
 """
+import json
 import re
 import sys
 from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
+from rich.status import Status
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -61,17 +62,24 @@ def main() -> None:
     console.print(f"  [dim]Output[/]  {output_dir.resolve()}")
     console.print(f"  [dim]Model[/]   {config.get('model', 'claude')}\n")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console,
-    ) as progress:
-        t = progress.add_task("Running pipeline…", total=None)
+    step_icons = {
+        "transcript": "[T]",
+        "sponsors": "[S]",
+        "placement": "[P]",
+        "copy": "[C]",
+        "tts": "[A]",
+        "done": "[*]",
+    }
+
+    with Status("", console=console) as status:
+        def on_status(step: str, detail: str, progress: int = 0, total: int = 0):
+            icon = step_icons.get(step, "[.]")
+            prog = f" [{progress}/{total}]" if total else ""
+            status.update(f"{icon} {detail}{prog}")
+            console.log(f"{icon} {detail}{prog}")
+
         job_id = start_job(video_id)
-        process_job(job_id, config)
-        progress.update(t, completed=1)
+        process_job(job_id, config, on_status=on_status)
 
     job = get_job(job_id)
     if not job:
@@ -87,6 +95,36 @@ def main() -> None:
         out_path = output_dir / f"ad_{i+1}_{safe_title}.mp3"
         out_path.write_bytes(ad.audio_bytes)
         written.append((out_path, ad.advertisement.title))
+
+    meta = {
+        "video_id": video_id,
+        "model": config.get("model", "claude"),
+        "output_dir": str(output_dir),
+        "ads": [
+            {
+                "file": str(path),
+                "sponsor": {
+                    "id": ad.advertisement.id,
+                    "title": ad.advertisement.title,
+                    "url": ad.advertisement.url,
+                },
+                "segment": {
+                    "no": ad.segment_no,
+                    "start_min": ad.segment_start / 60.0,
+                    "end_min": ad.segment_end / 60.0,
+                    "text": ad.segment_text,
+                },
+                "script": {
+                    "segue": ad.segue,
+                    "content": ad.content,
+                    "exit": ad.exit,
+                },
+            }
+            for path, ad in zip([p for p, _ in written], job.generated_ads)
+        ],
+    }
+    meta_path = output_dir / "ads.json"
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     table = Table(title="Generated ads", show_header=True, header_style="bold magenta")
     table.add_column("#", style="dim")

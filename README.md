@@ -49,3 +49,13 @@ addy  # reads dwarkesh.json in CWD, then project root
 - `addy/cli.py` — console entrypoint (`addy`); loads config, kicks off the pipeline, writes MP3s.
 - `pipeline.py` — orchestrates transcript → placement → copy → TTS, tracks job state.
 - `interface.py` — all external calls (LLMs, YouTube, Cartesia) and XML prompt/parse helpers.
+
+## End-to-end
+
+1. Load configuration.
+2. Fetch YouTube transcript.
+3. Use LLM to select ad placement(s).
+4. LLM generates 3 ad copy variations per placement.
+5. Cartesia TTS renders MP3s.
+6. MP3s and ads.json are written to the output directory.
+
