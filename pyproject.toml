@@ -7,14 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.39.0",
     "cartesia>=0.14.0",
-    "fastapi>=0.115.0",
     "pydantic>=2.0",
-    "pydub>=0.25.0",
     "python-dotenv>=1.0.0",
-    "uvicorn[standard]>=0.34.0",
+    "rich>=13.0.0",
     "youtube-transcript-api>=0.6.0",
-    "yt-dlp>=2024.1.0",
 ]
+
+[project.scripts]
+addy = "addy.cli:main"
 
 [build-system]
 requires = ["hatchling"]

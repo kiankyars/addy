@@ -5,11 +5,9 @@ from dotenv import load_dotenv
 from anthropic import Anthropic
 from cartesia import Cartesia
 from pydantic import BaseModel
-from pydub import AudioSegment
 import json
 import xml.etree.ElementTree as ET
 import uuid
-import io
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from voices import DEFAULT_VOICE_ID
@@ -319,42 +317,5 @@ def generate_advertisement_audio(advertisement_text: str, voice_id: str = None, 
     save_file_path = file_path or f"{uuid.uuid4()}.mp3"
     with open(save_file_path, "wb") as f:
         f.write(audio_bytes)
-    print(f"Audio file saved at {save_file_path}")
     return save_file_path
 
-
-def insert_advertisement_audio(original_audio_bytes: bytes, ad_audio_bytes: bytes, segment_after: TranscriptionSegment, output_path: str = None) -> str:
-    print(f"Inserting ad after segment ending at {segment_after.end} seconds")
-    
-    original_audio = AudioSegment.from_file(io.BytesIO(original_audio_bytes))
-    ad_audio = AudioSegment.from_file(io.BytesIO(ad_audio_bytes))
-    
-    insert_point_ms = int(segment_after.end * 1000)
-    
-    first_part = original_audio[:insert_point_ms]
-    second_part = original_audio[insert_point_ms:]
-    final_audio = first_part + ad_audio + second_part
-    
-    if not output_path:
-        output_path = f"output_{uuid.uuid4()}.mp3"
-    
-    final_audio.export(output_path, format="mp3")
-    print(f"Combined audio saved to {output_path}")
-    
-    return output_path
-
-def generate_ad_audio_with_nearby_audio(generated_ad_bytes: bytes, transcription_segment: TranscriptionSegment, original_audio_bytes: bytes) -> bytes:
-    original_audio = AudioSegment.from_file(io.BytesIO(original_audio_bytes))
-    ad_audio = AudioSegment.from_file(io.BytesIO(generated_ad_bytes))
-
-    start_ms = max(0, int((transcription_segment.start - 5) * 1000))  # 5 sec before
-    end_ms = int((transcription_segment.end + 10) * 1000)  # 10 sec after
-    insert_point_ms = int(transcription_segment.end * 1000)
-
-    before_segment = original_audio[start_ms:insert_point_ms]
-    after_segment = original_audio[insert_point_ms:end_ms]
-    final_audio = before_segment + ad_audio + after_segment
-
-    buffer = io.BytesIO()
-    final_audio.export(buffer, format="mp3")
-    return buffer.getvalue()

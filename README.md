@@ -1,47 +1,40 @@
+# Addy
+
+Generate podcast-style ad reads from a YouTube video: transcript → placement → copy → TTS. Outputs **one MP3 per sponsor** in your config (e.g. three sponsors → three audio files).
+
 ## How it works
 
-1. **Input** — You paste a **YouTube URL or video ID** in the UI.
-2. **Transcript** — Backend uses **youtube_transcript_api** to fetch the captions.
-3. **Ad placement** — **Anthropic Claude** reads the transcript and **sponsors** (`config/sponsors.json`) and picks where each ad fits.
-4. **Ad copy** — For each placement, Claude writes **segue**, **content**, and **exit** in the tone of the show.
-5. **TTS** — **Cartesia Sonic** turns each ad into audio (default Dwarkesh voice).
-6. **Stitch** — You pick one generated ad; the backend inserts it into the original (audio from **yt-dlp**); you download the stitched file.
+1. **Input** — YouTube URL or video ID.
+2. **Transcript** — Fetched via `youtube_transcript_api`.
+3. **Ad placement** — Claude picks where each sponsor fits in the transcript.
+4. **Ad copy** — For each placement, Claude writes segue, content, and exit in the show’s tone.
+5. **TTS** — Cartesia Sonic turns each ad into an MP3 (default Dwarkesh voice).
 
-**Stack:** One app. FastAPI serves the API and the static UI (Next.js export). No SQL; sponsors from JSON.
+You get **N ad audio files** (N = number of sponsors in your config). No stitching, no frontend.
 
----
-
-## Run
-
-### 1. Backend deps + env
+## Run (CLI)
 
 ```bash
-cp sample.env .env
-# Set ANTHROPIC_API_KEY and CARTESIA_API_KEY
+# .env with ANTHROPIC_API_KEY and CARTESIA_API_KEY
 uv sync
+addy "https://www.youtube.com/watch?v=BYXbuik3dgA"
 ```
 
-### 2. Build the UI (once)
+Ads are written to `addy_output/` by default. Options:
+
+- `-o DIR` — output directory (default: `addy_output`)
+- `--sponsors PATH` — sponsors JSON (default: `config/sponsors.json`)
+
+Example:
 
 ```bash
-cd web && pnpm install && pnpm build && cd ..
+addy BYXbuik3dgA -o ./ads --sponsors config/sponsors.json
 ```
 
-### 3. Start the app (API + UI on one port)
+## Config
 
-```bash
-uv run uvicorn app:app --host 0.0.0.0 --port 4001
-```
+`config/sponsors.json` — array of `id`, `url`, `title`, `content`, `tags`. Default three: Mercury, Jane Street, Labelbox.
 
-Open http://localhost:4001 — same origin for UI and API.
+## Stack
 
-Optional: edit `config/sponsors.json` (or pass `sponsors_config` in `POST /process` body).
-
----
-
-## Repo layout
-
-| Path | Purpose |
-|------|--------|
-| **./** | FastAPI app: API routes + static serve of `web/out`. Pipeline, config, voices. |
-| **web/** | Next.js UI (YouTube input, poll, pick ad, stitch, download). Build with `pnpm build` → `web/out`. |
+Python 3.11+, uv. Anthropic (placement + copy), Cartesia Sonic (TTS). No DB, no server.
