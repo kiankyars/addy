@@ -53,7 +53,8 @@ class GeneratedAdvertisementText(BaseModel):
 
 def get_youtube_transcript(video_id: str) -> list[TranscriptionSegment]:
     """Fetch timestamped transcript from YouTube. video_id is the 11-char ID from the URL."""
-    raw = YouTubeTranscriptApi.get_transcript(video_id)
+    transcript = YouTubeTranscriptApi().fetch(video_id)
+    raw = transcript.to_raw_data()
     return [
         TranscriptionSegment(
             no=i,
