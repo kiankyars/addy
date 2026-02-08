@@ -1,18 +1,11 @@
-# Adible
-
-Weave ads into podcasts: upload a recording, get AI-placed sponsor reads with natural segues, then download a stitched version.
-
----
-
 ## How it works
 
 1. **Upload** — You upload an audio file (e.g. podcast episode) via the podcast UI.
-2. **Transcribe** — Backend uses **OpenAI Whisper** to get timestamped segments.
+2. **Transcribe** — Backend uses **Cartesia Ink** (STT) to get word-level timestamps, grouped into segments.
 3. **Ad placement** — **Anthropic Claude** reads the transcript and a list of ads (from DB or Google Sheet) and picks where each ad fits best.
 4. **Ad copy** — For each placement, Claude writes a **segue** (lead-in), **content** (sponsor read), and **exit** (back to show), in the tone of the surrounding speech.
-5. **Voice choice** — Claude picks which **Cartesia** voice best matches the segment (or you use a single voice).
-6. **TTS** — **Cartesia Sonic** turns each ad text into audio (MP3).
-7. **Stitch** — Backend inserts the ad audio after the chosen segment; you pick one generated ad in the UI and download the full stitched file.
+5. **TTS** — **Cartesia Sonic** turns each ad text into audio (MP3) using the default Dwarkesh voice.
+6. **Stitch** — Backend inserts the ad audio after the chosen segment; you pick one generated ad in the UI and download the full stitched file.
 
 **Stack:** SQLite (audio metadata, ads, generated ads), FastAPI (backend), Next.js (podcast UI). Ads can be seeded from `migrations/seed_db_tables.sql` or synced from a Google Sheet (optional; see `server/recorded/utils.py` and `SHEET_ID` / `credentials.json`).
 
@@ -34,9 +27,8 @@ cp sample.env .env
 
 Edit `.env`:
 
-- `OPENAI_API_KEY` — for Whisper transcription
-- `ANTHROPIC_API_KEY` — for ad placement, copy, and voice choice
-- `CARTESIA_API_KEY` — for TTS
+- `ANTHROPIC_API_KEY` — for ad placement and copy
+- `CARTESIA_API_KEY` — for transcription (STT) and TTS
 
 Optional: `SHEET_ID` and `credentials.json` if you want to pull ads from a Google Sheet instead of (or in addition to) the seeded DB ads.
 
@@ -78,7 +70,7 @@ Open the URL shown (e.g. http://localhost:3000).
 
 | Path | Purpose |
 |------|--------|
-| **server/recorded/** | Backend: FastAPI app, Whisper + Anthropic + Cartesia, DB, ad logic, stitching. |
+| **server/recorded/** | Backend: FastAPI app, Cartesia STT + Anthropic + Cartesia TTS, DB, ad logic, stitching. |
 | **podcast/** | Next.js app: upload, list uploads, view/pick generated ads, trigger stitch, download. |
 
 The podcast app talks to the backend at `http://localhost:4001` (see `podcast/src/app/uploader.tsx` and related fetch calls).

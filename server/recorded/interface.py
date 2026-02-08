@@ -2,7 +2,6 @@ import os
 import csv
 from typing import List
 from dotenv import load_dotenv
-from openai import OpenAI
 from anthropic import Anthropic
 from cartesia import Cartesia
 from pydantic import BaseModel
@@ -13,17 +12,18 @@ import uuid
 import io
 
 from domain.advertisement import AdvertisementDb
-from voices import AVAILABLE_VOICES
+from voices import DEFAULT_VOICE_ID
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 cartesia_client = Cartesia(api_key=CARTESIA_API_KEY)
+
+# Target segment length in seconds (group word timestamps into segments)
+SEGMENT_TARGET_SEC = 8.0
 
 class Advertisement(BaseModel):
     id: str
@@ -49,52 +49,38 @@ class GeneratedAdvertisementText(BaseModel):
 
 def transcribe_audio_with_timestamps(file_path: str) -> list[TranscriptionSegment]:
     print(f"Starting transcription for file: {file_path}")
-    audio = AudioSegment.from_file(file_path)
-    
-    snippet_duration = 2 * 60 * 1000
-    print(f"Processing audio in {snippet_duration/1000} second segments")
-    
-    transcription_segments = []
-    total_time_processed = 0  # Initialize total time processed
-    
-    for i in range(0, len(audio), snippet_duration):
-        print(f"Processing segment {i // snippet_duration + 1}")
-        snippet = audio[i:i + snippet_duration]
-        
-        snippet_file_path = f"temp_snippet_{i // snippet_duration}.mp3"
-        snippet.export(snippet_file_path, format="mp3")
-        print(f"Exported snippet to {snippet_file_path}")
-
-        segments_created = 0
-        
-        with open(snippet_file_path, 'rb') as audio_file:
-            print("Sending snippet to OpenAI for transcription...")
-            transcription_verbose = openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"]
+    print("Sending to Cartesia STT...")
+    with open(file_path, "rb") as f:
+        response = cartesia_client.stt.transcribe(
+            file=f,
+            model="ink-whisper",
+            language="en",
+            timestamp_granularities=["word"],
+        )
+    if not getattr(response, "words", None):
+        text = getattr(response, "text", "") or ""
+        duration = getattr(response, "duration", 0.0) or 0.0
+        return [TranscriptionSegment(no=0, start=0.0, end=max(0.1, duration), text=text or "(no speech)")]
+    words = list(response.words)
+    segments: list[TranscriptionSegment] = []
+    seg_start = words[0].start
+    seg_text_parts: list[str] = []
+    for i, w in enumerate(words):
+        seg_text_parts.append(w.word)
+        if (w.end - seg_start) >= SEGMENT_TARGET_SEC or i == len(words) - 1:
+            segments.append(
+                TranscriptionSegment(
+                    no=len(segments),
+                    start=seg_start,
+                    end=w.end,
+                    text=" ".join(seg_text_parts).strip(),
+                )
             )
-        
-        for idx, t_segment in enumerate(transcription_verbose.segments):
-            start_time = total_time_processed + t_segment.start
-            end_time = total_time_processed + t_segment.end
-            print(f"Segment from {start_time} to {end_time}: {t_segment.text}")
-
-            transcription_segments.append(TranscriptionSegment(
-                no=segments_created + idx,
-                start=start_time,
-                end=end_time,
-                text=t_segment.text
-            ))
-
-        segments_created += len(transcription_verbose.segments)
-        
-        total_time_processed += len(snippet) / 1000
-        print(f"Total time processed: {total_time_processed} seconds")  # Print total time processed in seconds
-
-    print("Transcription complete!")
-    return transcription_segments
+            seg_text_parts = []
+            if i < len(words) - 1:
+                seg_start = words[i + 1].start
+    print(f"Transcription complete: {len(segments)} segments")
+    return segments
 
 
 def _load_tsv_as_advertisements(file_path: str) -> List[Advertisement]:
@@ -364,87 +350,8 @@ def generate_advertisements(ad_placement: AdvertisementPlacement, transcription_
 
     return advertisement_texts
 
-def determine_optimal_voice_id(advertisement_text: str, transcription_segments: list[TranscriptionSegment], ad_placement: AdvertisementPlacement) -> str:
-    voices_xml = "\n".join([
-        f"<voice id='{voice.id}'>"
-        f"<description>{voice.description}</description>"
-        f"<language>{voice.language}</language>"
-        f"</voice>"
-    for voice in AVAILABLE_VOICES])
-
-    surrounding_segments: list[TranscriptionSegment] = []
-    segment_nos = {segment.no: segment for segment in transcription_segments}
-
-    for offset in [-2, -1, 0, 1, 2]:
-        target_no = ad_placement.transcription_segment.no + offset
-        if target_no in segment_nos:
-            surrounding_segments.append(segment_nos[target_no])
-
-    surrounding_segments_xml = "\n".join([
-        f"<transcription_segment no='{segment.no}'>"
-        f"<text>{segment.text}</text>"
-        f"</transcription_segment>"
-    for segment in surrounding_segments])
-
-    prompt = f"""You are a marketing expert agent. You know your way around selecting the right voice for an advertisement.
-You will be given an advertisement text, the surrounding segments of the audio recording, and the advertisement placement.
-Your job is to select the optimal voice for the advertisement.
-
-Here are the surrounding segments of the audio recording:
-<surrounding_segments>
-{surrounding_segments_xml}
-</surrounding_segments>
-
-Here is the advertisement text:
-<advertisement_text>
-{advertisement_text}
-</advertisement_text>
-
-The available voices are:
-<available_voices>
-{voices_xml}
-</available_voices>
-
-Please follow the below rules when selecting the voice:
-1. The voice should match the tone of the surrounding segments.
-2. The conversation pace should be optimal for the selected voice.
-3. The voice should be able to speak the advertisement text naturally.
-4. When no voice is a good fit, return the voice with id 'default'.
-
-Please respond in the format provided between the <example></example> tags.
-<example>
-<response>
-<voice_determination>
-<thinking>
-This conversation seems to be between two people, they seem to be interested in an sports car.
-Both people interested seem to be males in their 30s.
-</thinking>
-<voice id='voice id'/> <!-- The voice that should be used for the advertisement -->
-</voice_determination>
-</response>
-</example>
-"""
-    
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-        stop_sequences=["</response>"],
-    )
-    xml_response = "<response>" + (response.content[0].text or "").rstrip() + "</response>"
-    try:
-        print(f"LLM Response for determining optimal voice:\n{xml_response}")
-        root = ET.fromstring(f"<response>{xml_response}</response>")
-        voice_element = root.find('.//voice')
-        voice_id = voice_element.get('id') if voice_element is not None else "default"
-    except Exception as e:
-        print(f"Error parsing voice determination response: {e}")
-        voice_id = "default"
-    return voice_id
-    
-
 def generate_advertisement_audio(advertisement_text: str, voice_id: str = None, file_path: str = None) -> str:
-    voice_id = voice_id or os.getenv("CARTESIA_VOICE_ID") or AVAILABLE_VOICES[0].id
+    voice_id = voice_id or os.getenv("CARTESIA_VOICE_ID") or DEFAULT_VOICE_ID
     chunks = list(
         cartesia_client.tts.bytes(
             model_id="sonic-2",

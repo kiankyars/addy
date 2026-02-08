@@ -23,7 +23,6 @@ httpx==0.28.1
 idna==3.10
 jiter==0.8.2
 oauthlib==3.2.2
-openai==1.63.2
 proto-plus==1.26.0
 protobuf==5.29.3
 pyasn1==0.6.1
