@@ -8,6 +8,7 @@ from cartesia import Cartesia
 from pydantic import BaseModel
 import json
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape as xml_escape
 import uuid
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -37,7 +38,7 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
     if model == "claude":
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2048,
+            max_tokens=32000,
             messages=[{"role": "user", "content": prompt}],
             stop_sequences=stop_sequences,
         )
@@ -47,15 +48,58 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
         client = _get_gemini_client()
         config = types.GenerateContentConfig(
             stop_sequences=stop_sequences,
-            max_output_tokens=2048,
+            max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3-flash-preview",
             contents=prompt,
             config=config,
         )
         return (response.text or "").rstrip()
     raise ValueError(f"Unknown model: {model}")
+
+
+import re as _re
+
+
+def _extract_xml_block(raw: str, tag: str) -> str | None:
+    """Extract a specific XML block from LLM output that may contain commentary."""
+    pattern = _re.compile(rf"<{tag}>(.*?)</{tag}>", _re.DOTALL)
+    m = pattern.search(raw)
+    if m:
+        return f"<{tag}>{m.group(1)}</{tag}>"
+    return None
+
+
+def _wrap_llm_xml(raw: str, inner_tag: str | None = None) -> str:
+    """Clean up LLM XML output: extract relevant XML block, strip preamble."""
+    text = raw.strip()
+    # If we know the inner tag, extract just that block (handles mixed commentary)
+    if inner_tag:
+        block = _extract_xml_block(text, inner_tag)
+        if block:
+            return f"<response>{block}</response>"
+    # Strip markdown fences if present
+    text = _re.sub(r"```xml\s*", "", text)
+    text = _re.sub(r"\s*```", "", text)
+    # Strip anything before the first XML tag
+    m = _re.search(r"<", text)
+    if m:
+        text = text[m.start():]
+    # Remove outer <response> tags if the LLM already included them
+    if text.startswith("<response>"):
+        text = text[len("<response>"):]
+    if text.endswith("</response>"):
+        text = text[:-len("</response>")]
+    return "<response>" + text + "</response>"
+
+
+def _extract_placements_fallback(raw: str) -> ET.Element:
+    """Extract complete <placement> blocks via regex when full XML parse fails."""
+    blocks = _re.findall(r"<placement>.*?</placement>", raw, _re.DOTALL)
+    xml = "<response><possible_ad_placements>" + "".join(blocks) + "</possible_ad_placements></response>"
+    return ET.fromstring(xml)
+
 
 def load_config(config_path: str | Path) -> dict:
     path = Path(config_path)
@@ -128,16 +172,16 @@ def _determine_ad_placement(
         f"<transcription_segment no='{segment.no}'>"
         f"<start>{segment.start}</start>"
         f"<end>{segment.end}</end>"
-        f"<text>{segment.text}</text>"
+        f"<text>{xml_escape(segment.text)}</text>"
         f"</transcription_segment>"
     for segment in transcription_segments])
 
     available_ad_xml = "\n".join([
-        f"<advertisement id='{ad.id}'>"
-        f"<url>{ad.url}</url>"
-        f"<title>{ad.title}</title>"
-        f"<content>{ad.content}</content>"
-        f"<tags>{','.join(ad.tags)}</tags>"
+        f"<advertisement id='{xml_escape(ad.id)}'>"
+        f"<url>{xml_escape(ad.url)}</url>"
+        f"<title>{xml_escape(ad.title)}</title>"
+        f"<content>{xml_escape(ad.content)}</content>"
+        f"<tags>{xml_escape(','.join(ad.tags))}</tags>"
         f"</advertisement>"
     for ad in available_ads])
 
@@ -145,13 +189,13 @@ def _determine_ad_placement(
     You will be given the transcript of a audio recording and a list of advertisements that can be placed in the audio recording.
     Your job is to determine the transcription segments along with the advertisement that should be placed in the audio recording.
 
-    Please respond in the format provided between the <example></example> tags.
+    Please respond in the format provided between the <example></example> tags. Do NOT include XML comments in your response.
     <example>
     <response>
     <possible_ad_placements>
     <placement>
-    <transcription_segment no='segment number'/> <!-- The segment after which the advertisement should be placed -->
-    <advertisement id='advertisement id'/> <!-- The advertisement that should be placed -->
+    <transcription_segment no='segment number'/>
+    <advertisement id='advertisement id'/>
     </placement>
     </possible_ad_placements>
     </response>
@@ -175,20 +219,33 @@ def _determine_ad_placement(
     """
 
     raw = _llm_completion(prompt, ["</response>"], model)
-    xml_response = "<response>" + raw + "</response>"
-    root = ET.fromstring(xml_response)
+    # Strip XML comments that some models add (break parsing if truncated)
+    cleaned = _re.sub(r"<!--.*?-->", "", raw, flags=_re.DOTALL)
+    xml_response = _wrap_llm_xml(cleaned, inner_tag="possible_ad_placements")
+    try:
+        root = ET.fromstring(xml_response)
+    except ET.ParseError:
+        # Fallback: extract complete <placement> blocks via regex
+        root = _extract_placements_fallback(cleaned)
 
+    segment_map = {seg.no: seg for seg in transcription_segments}
+    ad_map = {ad.id: ad for ad in available_ads}
     ad_placements = []
     for placement in root.findall('.//placement'):
-        segment_no = int(placement.find('transcription_segment').get('no'))
-        ad_id = placement.find('advertisement').get('id')
-
-        transcription_segment = transcription_segments[segment_no]
-        determined_advertisement = next(ad for ad in available_ads if ad.id == ad_id)
-
+        seg_el = placement.find('transcription_segment')
+        ad_el = placement.find('advertisement')
+        if seg_el is None or ad_el is None:
+            continue
+        try:
+            segment_no = int(seg_el.get('no'))
+        except (TypeError, ValueError):
+            continue
+        ad_id = ad_el.get('id')
+        if segment_no not in segment_map or ad_id not in ad_map:
+            continue
         ad_placements.append(AdvertisementPlacement(
-            transcription_segment=transcription_segment,
-            determined_advertisement=determined_advertisement
+            transcription_segment=segment_map[segment_no],
+            determined_advertisement=ad_map[ad_id],
         ))
 
     return ad_placements
@@ -222,18 +279,18 @@ def _generate_advertisement_text(
     ad_placement_xml = f"""
 <advertisement_placement>
     <transcription_segment no='{ad_placement.transcription_segment.no}'>
-        <text>{ad_placement.transcription_segment.text}</text>
+        <text>{xml_escape(ad_placement.transcription_segment.text)}</text>
     </transcription_segment>
     <advertisement>
-        <title>{ad_placement.determined_advertisement.title}</title>
-        <content>{ad_placement.determined_advertisement.content}</content>
+        <title>{xml_escape(ad_placement.determined_advertisement.title)}</title>
+        <content>{xml_escape(ad_placement.determined_advertisement.content)}</content>
     </advertisement>
 </advertisement_placement>
 """
-    
+
     surrounding_segments_xml = "\n".join([
         f"<transcription_segment no='{segment.no}'>"
-        f"<text>{segment.text}</text>"
+        f"<text>{xml_escape(segment.text)}</text>"
         f"</transcription_segment>"
     for segment in surrounding_segments])
 
@@ -318,7 +375,11 @@ the exit of the content
 """
     
     raw = _llm_completion(prompt, ["</response>"], model)
-    return parse_advertisement_xml("<response>" + raw + "</response>")
+    xml_response = _wrap_llm_xml(raw, inner_tag="advertisements")
+    try:
+        return parse_advertisement_xml(xml_response)
+    except ET.ParseError as e:
+        raise RuntimeError(f"Ad text XML parse error: {e}\nRaw LLM response:\n{raw[:2000]}") from e
 
 
 def generate_advertisements(
