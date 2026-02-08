@@ -29,7 +29,7 @@ addy  # reads dwarkesh.json in CWD, then project root
   "model": "gemini",        // "claude" or "gemini"
   "voice": "<cartesia-voice-id>",
   "sponsors": [
-    {"id": "acme", "url": "https://acme.com", "title": "Acme", "content": "Short ad blurb", "tags": ["tag1", "tag2"]}
+    {"id": "acme", "title": "Acme", "content": "Short ad blurb", "tags": ["tag1", "tag2"]}
   ]
 }
 ```
@@ -58,4 +58,3 @@ addy  # reads dwarkesh.json in CWD, then project root
 4. LLM generates 3 ad copy variations per placement.
 5. Cartesia TTS renders MP3s.
 6. MP3s and ads.json are written to the output directory.
-

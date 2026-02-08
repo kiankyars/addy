@@ -62,7 +62,7 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
             max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=config,
         )
@@ -435,7 +435,93 @@ def determine_ad_placement(
             continue
         seen_ad_ids.add(ad_id)
         deduped.append(placement)
+
+    # Ensure every sponsor gets exactly one placement by filling missing ads.
+    missing_ads = [ad for ad in available_ads if ad.id not in seen_ad_ids]
+    if missing_ads:
+        used_segments = {p.transcription_segment.no for p in deduped}
+        for i, ad in enumerate(missing_ads):
+            seg = _choose_segment_for_ad(
+                transcription_segments,
+                ad,
+                used_segments,
+                fallback_rank=i,
+                fallback_total=len(missing_ads),
+            )
+            used_segments.add(seg.no)
+            deduped.append(
+                AdvertisementPlacement(
+                    transcription_segment=seg,
+                    determined_advertisement=ad,
+                )
+            )
     return deduped
+
+
+def _choose_segment_for_ad(
+    transcription_segments: list[TranscriptionSegment],
+    ad: Advertisement,
+    used_segment_nos: set[int],
+    fallback_rank: int,
+    fallback_total: int,
+) -> TranscriptionSegment:
+    keywords = _ad_keywords(ad)
+    best_seg = None
+    best_score = -1.0
+    for seg in transcription_segments:
+        if seg.no in used_segment_nos:
+            continue
+        score = _score_segment(seg, keywords)
+        if score > best_score:
+            best_score = score
+            best_seg = seg
+    if best_seg and best_score > 0:
+        return best_seg
+    # Fallback: pick a roughly even spacing if no keyword hits.
+    target_idx = int((fallback_rank + 1) / (fallback_total + 1) * len(transcription_segments))
+    return _nearest_unused_segment(transcription_segments, target_idx, used_segment_nos)
+
+
+def _nearest_unused_segment(
+    transcription_segments: list[TranscriptionSegment],
+    target_idx: int,
+    used_segment_nos: set[int],
+) -> TranscriptionSegment:
+    if 0 <= target_idx < len(transcription_segments):
+        seg = transcription_segments[target_idx]
+        if seg.no not in used_segment_nos:
+            return seg
+    for offset in range(1, len(transcription_segments)):
+        left = target_idx - offset
+        right = target_idx + offset
+        if left >= 0:
+            seg = transcription_segments[left]
+            if seg.no not in used_segment_nos:
+                return seg
+        if right < len(transcription_segments):
+            seg = transcription_segments[right]
+            if seg.no not in used_segment_nos:
+                return seg
+    return transcription_segments[0]
+
+
+def _ad_keywords(ad: Advertisement) -> list[str]:
+    words = []
+    for tag in ad.tags:
+        words.extend(_re.split(r"[^a-zA-Z0-9]+", tag.lower()))
+    words.extend(_re.split(r"[^a-zA-Z0-9]+", ad.title.lower()))
+    return [w for w in words if len(w) >= 3]
+
+
+def _score_segment(seg: TranscriptionSegment, keywords: list[str]) -> float:
+    text = seg.text.lower()
+    score = 0.0
+    for kw in keywords:
+        if kw and kw in text:
+            score += 1.0
+    if text.strip().endswith((".", "?", "!", "…")):
+        score += 0.2
+    return score
 
 def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText]:
     root = ET.fromstring(xml_content)

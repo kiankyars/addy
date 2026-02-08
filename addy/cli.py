@@ -94,7 +94,7 @@ def main() -> None:
         safe_title = re.sub(r"[^\w\-]", "_", ad.advertisement.title)[:40]
         out_path = output_dir / f"ad_{i+1}_{safe_title}.mp3"
         out_path.write_bytes(ad.audio_bytes)
-        written.append((out_path, ad.advertisement.title))
+        written.append((out_path, ad))
 
     meta = {
         "video_id": video_id,
@@ -120,7 +120,7 @@ def main() -> None:
                     "exit": ad.exit,
                 },
             }
-            for path, ad in zip([p for p, _ in written], job.generated_ads)
+            for path, ad in written
         ],
     }
     meta_path = output_dir / "ads.json"
@@ -130,8 +130,8 @@ def main() -> None:
     table.add_column("#", style="dim")
     table.add_column("Sponsor")
     table.add_column("File", style="green")
-    for i, (path, title) in enumerate(written, 1):
-        table.add_row(str(i), title, str(path))
+    for i, (path, ad) in enumerate(written, 1):
+        table.add_row(str(i), ad.advertisement.title, str(path))
     console.print(table)
     console.print(f"\n[bold green]Done.[/] {len(written)} ad(s) written to [green]{output_dir}[/]")
 
