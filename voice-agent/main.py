@@ -33,11 +33,13 @@ async def get_agent(env: AgentEnv, call_request: CallRequest):
     )
 
 
+# Dwarkesh cloned voice for the demo
+DWARKESH_VOICE_ID = "17523c4f-8ab7-43e1-9159-bc52487d77ad"
+
+
 def pre_call_handler(call_request: CallRequest):
-    voice_id = os.getenv("CARTESIA_VOICE_ID")
-    if not voice_id:
-        return None
     from line.voice_agent_app import PreCallResult
+    voice_id = os.getenv("CARTESIA_VOICE_ID") or DWARKESH_VOICE_ID
     return PreCallResult(config={"tts": {"voice": voice_id, "model": "sonic-2", "language": "en"}})
 
 
