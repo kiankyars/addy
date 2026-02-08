@@ -1,18 +1,25 @@
 {
   "sponsors": [
     {
-      "id": "dominos",
-      "url": "https://www.dominos.co.in/",
-      "title": "30-Minute Delivery Guarantee",
-      "content": "Domino's 30-minute delivery guarantee. Over 1,250 stores across India, pizza delivery on trains.",
-      "tags": ["pizza", "delivery"]
+      "id": "mercury",
+      "url": "https://mercury.com/personal-banking",
+      "title": "Mercury Personal Banking",
+      "content": "Mercury just started offering personal banking! I'm already banking with Mercury for business purposes, so getting to bank with them for my personal life makes everything so much simpler. Apply now at https://mercury.com/personal-banking",
+      "tags": ["banking", "personal", "finance"]
     },
     {
-      "id": "chess",
-      "url": "https://www.chess.com/",
-      "title": "Play Chess Online",
-      "content": "Chess.com: play online with friends or bots, real-time games worldwide.",
-      "tags": ["games"]
+      "id": "janestreet",
+      "url": "https://janestreet.com/dwarkesh",
+      "title": "Jane Street Puzzle",
+      "content": "Jane Street sent me a new puzzle last week: they trained a neural net, shuffled all 96 layers, and asked me to put them back in order. I tried but… I didn't quite nail it. If you're curious, or if you think you can do better, you should take a stab at https://janestreet.com/dwarkesh",
+      "tags": ["puzzle", "neural net", "trading"]
+    },
+    {
+      "id": "labelbox",
+      "url": "https://labelbox.com/dwarkesh",
+      "title": "Labelbox",
+      "content": "Labelbox can get you robotics and RL data at scale. Labelbox starts by helping you define your ideal data distribution, and then their massive Alignerr network collects frontier-grade data that you can use to train your models. Learn more at https://labelbox.com/dwarkesh",
+      "tags": ["robotics", "RL", "data", "ML"]
     }
   ]
 }
