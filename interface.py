@@ -37,7 +37,7 @@ def _get_gemini_client():
 def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) -> str:
     if model == "claude":
         response = anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-haiku-4.5",
             max_tokens=32000,
             messages=[{"role": "user", "content": prompt}],
             stop_sequences=stop_sequences,
@@ -51,7 +51,7 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
             max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=config,
         )
