@@ -18,7 +18,7 @@ Generate podcast-style ad reads from any YouTube video; Addy ingests a transcrip
 ```bash
 uv sync
 source .venv/bin/activate
-addy  # reads dwarkesh.json in CWD, then project root
+addy
 ```
 
 ## Configuration (`dwarkesh.json` example)
