@@ -22,8 +22,11 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 cartesia_client = Cartesia(api_key=CARTESIA_API_KEY)
 
+EXA_API_KEY = os.getenv("EXA_API_KEY")
+
 LLM_MODEL = Literal["claude", "gemini"]
 _gemini_client = None
+_exa_client = None
 
 
 def _get_gemini_client():
@@ -32,6 +35,14 @@ def _get_gemini_client():
         from google import genai
         _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
     return _gemini_client
+
+
+def _get_exa_client():
+    global _exa_client
+    if _exa_client is None:
+        from exa_py import Exa
+        _exa_client = Exa(api_key=EXA_API_KEY)
+    return _exa_client
 
 
 def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) -> str:
@@ -251,12 +262,170 @@ def _determine_ad_placement(
     return ad_placements
 
 
+_TOOL_SEARCH_SPONSOR = {
+    "name": "search_sponsor_info",
+    "description": "Search the web for information about a sponsor/product to write better ad placements. Use this to learn about what the sponsor does, their key selling points, and recent news.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search query about the sponsor or product",
+            }
+        },
+        "required": ["query"],
+    },
+}
+
+_TOOL_SELECT_PLACEMENTS = {
+    "name": "select_ad_placements",
+    "description": "Commit your final ad placement decisions. Each placement pairs a transcript segment number with a sponsor ad ID. Call this once with all placements.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "placements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "segment_no": {"type": "integer", "description": "Transcript segment number to place the ad after"},
+                        "ad_id": {"type": "string", "description": "Advertisement ID"},
+                        "reasoning": {"type": "string", "description": "Brief reason this segment is a natural fit"},
+                    },
+                    "required": ["segment_no", "ad_id", "reasoning"],
+                },
+            }
+        },
+        "required": ["placements"],
+    },
+}
+
+
+def _execute_exa_search(query: str) -> str:
+    """Run an Exa search and return a text summary of results."""
+    exa = _get_exa_client()
+    result = exa.search_and_contents(query, num_results=3, text=True)
+    parts = []
+    for r in result.results:
+        text_snippet = (r.text or "")
+        parts.append(f"- {r.title}: {text_snippet}")
+    return "\n".join(parts) if parts else "No results found."
+
+
+def _determine_ad_placement_agentic(
+    transcription_segments: list[TranscriptionSegment],
+    available_ads: list[Advertisement],
+) -> List[AdvertisementPlacement]:
+    """Claude tool-use placement: optionally researches sponsors via Exa, then commits placements."""
+
+    segment_lines = "\n".join(
+        f"[{seg.no}] ({seg.start:.1f}s-{seg.end:.1f}s) {seg.text}"
+        for seg in transcription_segments
+    )
+    ad_lines = "\n".join(
+        f"- id={ad.id} | {ad.title}: {ad.content} (tags: {', '.join(ad.tags)})"
+        for ad in available_ads
+    )
+
+    system_prompt = (
+        "You are an expert podcast ad-placement agent. You will be given a transcript and a list of sponsors. "
+        "Your goal: pick the best transcript segments to insert each sponsor's ad after, so ads feel like a natural part of the conversation.\n\n"
+        "You have two tools:\n"
+        "1. search_sponsor_info — research a sponsor online to understand their product better (optional, use if sponsor info is sparse)\n"
+        "2. select_ad_placements — commit your final placement decisions (required)\n\n"
+        "Rules:\n"
+        "- Place each sponsor at most once.\n"
+        "- Only place ads where there is a natural topic transition.\n"
+        "- If no good placement exists for a sponsor, omit it.\n"
+        "- Call select_ad_placements exactly once with all your decisions."
+    )
+
+    messages = [
+        {
+            "role": "user",
+            "content": f"Here is the transcript:\n\n{segment_lines}\n\nHere are the sponsors:\n\n{ad_lines}\n\nResearch any sponsors if needed, then select placements.",
+        }
+    ]
+
+    tools = [_TOOL_SEARCH_SPONSOR, _TOOL_SELECT_PLACEMENTS]
+
+    # First call
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system=system_prompt,
+        messages=messages,
+        tools=tools,
+    )
+
+    # Process tool calls — may need a second round if searches were requested
+    tool_results = []
+    placements_input = None
+
+    for block in response.content:
+        if block.type == "tool_use":
+            if block.name == "search_sponsor_info":
+                result_text = _execute_exa_search(block.input["query"])
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result_text,
+                })
+            elif block.name == "select_ad_placements":
+                placements_input = block.input["placements"]
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": "Placements recorded.",
+                })
+
+    # If we got searches but no placements yet, do a second call
+    if tool_results and placements_input is None:
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "user", "content": tool_results})
+
+        response2 = anthropic_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system_prompt,
+            messages=messages,
+            tools=tools,
+        )
+
+        for block in response2.content:
+            if block.type == "tool_use" and block.name == "select_ad_placements":
+                placements_input = block.input["placements"]
+                break
+
+    if not placements_input:
+        return []
+
+    # Convert to AdvertisementPlacement objects
+    segment_map = {seg.no: seg for seg in transcription_segments}
+    ad_map = {ad.id: ad for ad in available_ads}
+    results = []
+    for p in placements_input:
+        seg_no = p["segment_no"]
+        ad_id = p["ad_id"]
+        if seg_no in segment_map and ad_id in ad_map:
+            results.append(AdvertisementPlacement(
+                transcription_segment=segment_map[seg_no],
+                determined_advertisement=ad_map[ad_id],
+            ))
+    return results
+
+
 def determine_ad_placement(
     transcription_segments: list[TranscriptionSegment],
     available_ads: list[Advertisement],
     model: LLM_MODEL = "claude",
 ) -> List[AdvertisementPlacement]:
-    return _determine_ad_placement(transcription_segments, available_ads, model)
+    if model == "claude":
+        placements = _determine_ad_placement_agentic(transcription_segments, available_ads)
+    else:
+        placements = _determine_ad_placement(transcription_segments, available_ads, model)
+
+    return placements
 
 def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText]:
     root = ET.fromstring(xml_content)
