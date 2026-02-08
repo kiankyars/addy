@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Adible Podcasts",
+  title: "Addy Podcasts",
   description: "Insert ads into your podcast files with ease.",
 };
 

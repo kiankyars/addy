@@ -1,6 +1,6 @@
 # Podcast UI
 
-Next.js app for the Adible podcast ad pipeline. Upload audio → see generated ads → pick one → download stitched file.
+Next.js app for the Addy podcast ad pipeline. Upload audio → see generated ads → pick one → download stitched file.
 
 Start the backend first (see root [README](../README.md)):
 
