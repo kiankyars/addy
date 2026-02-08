@@ -1,11 +1,11 @@
 """
-Addy CLI: YouTube URL → transcript → placement → copy → TTS → N ad MP3s.
+Addy: YouTube → transcript → placement → copy → TTS → N ad MP3s.
+All settings from dwarkesh.json (video, output, model, voice, sponsors).
 """
 import re
 import sys
 from pathlib import Path
 
-import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -13,14 +13,10 @@ from rich.table import Table
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from interface import load_config
 from pipeline import start_job, process_job, get_job
 
 console = Console()
-app = typer.Typer(
-    name="addy",
-    help="Generate podcast ad reads from a YouTube video. Outputs one MP3 per sponsor.",
-    no_args_is_help=True,
-)
 
 VIDEO_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([a-zA-Z0-9_-]{11})"
@@ -35,45 +31,35 @@ def extract_video_id(value: str) -> str | None:
     return m.group(1) if m else None
 
 
-@app.callback(invoke_without_command=True)
-def main(
-    video: str = typer.Argument(..., help="YouTube video URL or 11-character video ID"),
-    output: Path = typer.Option(
-        Path("addy_output"),
-        "--output", "-o",
-        path_type=Path,
-        help="Directory to write ad MP3s",
-    ),
-    sponsors: Path | None = typer.Option(
-        None,
-        "--sponsors",
-        path_type=Path,
-        help="Path to sponsors JSON (default: config/sponsors.json)",
-    ),
-    model: str = typer.Option(
-        "claude",
-        "--model", "-m",
-        help="LLM for placement and ad copy: claude or gemini",
-    ),
-) -> None:
-    if model not in ("claude", "gemini"):
-        console.print("[red]Error:[/] --model must be 'claude' or 'gemini'.")
-        raise typer.Exit(1)
+def main() -> None:
+    config_path = Path.cwd() / "dwarkesh.json"
+    if not config_path.exists():
+        config_path = Path(__file__).resolve().parent.parent / "dwarkesh.json"
+    if not config_path.exists():
+        console.print("[red]Error:[/] dwarkesh.json not found in current directory or project root.")
+        sys.exit(1)
+
+    config = load_config(config_path)
+    video = config.get("video")
+    if not video:
+        console.print("[red]Error:[/] dwarkesh.json must contain \"video\" (URL or ID).")
+        sys.exit(1)
 
     video_id = extract_video_id(video)
     if not video_id:
-        console.print("[red]Error:[/] Invalid YouTube URL or video ID.")
-        raise typer.Exit(1)
+        console.print("[red]Error:[/] Invalid video URL or ID in dwarkesh.json.")
+        sys.exit(1)
 
-    output.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(config.get("output", "addy_output"))
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     console.print(Panel.fit(
         "[bold cyan]Addy[/] — transcript → placement → copy → TTS",
         border_style="cyan",
     ))
-    console.print(f"  [dim]Video ID[/] {video_id}")
-    console.print(f"  [dim]Output[/]  {output.resolve()}")
-    console.print(f"  [dim]LLM[/]     {model}\n")
+    console.print(f"  [dim]Video[/]   {video_id}")
+    console.print(f"  [dim]Output[/]  {output_dir.resolve()}")
+    console.print(f"  [dim]Model[/]   {config.get('model', 'claude')}\n")
 
     with Progress(
         SpinnerColumn(),
@@ -83,22 +69,22 @@ def main(
         console=console,
     ) as progress:
         t = progress.add_task("Running pipeline…", total=None)
-        job_id = start_job(video_id, sponsors)
-        process_job(job_id, sponsors, model=model)
+        job_id = start_job(video_id)
+        process_job(job_id, config)
         progress.update(t, completed=1)
 
     job = get_job(job_id)
     if not job:
         console.print("[red]Error:[/] Job not found.")
-        raise typer.Exit(1)
+        sys.exit(1)
     if job.status == "failed":
         console.print(f"[red]Failed:[/] {job.error}")
-        raise typer.Exit(1)
+        sys.exit(1)
 
     written = []
     for i, ad in enumerate(job.generated_ads):
         safe_title = re.sub(r"[^\w\-]", "_", ad.advertisement.title)[:40]
-        out_path = output / f"ad_{i+1}_{safe_title}.mp3"
+        out_path = output_dir / f"ad_{i+1}_{safe_title}.mp3"
         out_path.write_bytes(ad.audio_bytes)
         written.append((out_path, ad.advertisement.title))
 
@@ -109,8 +95,8 @@ def main(
     for i, (path, title) in enumerate(written, 1):
         table.add_row(str(i), title, str(path))
     console.print(table)
-    console.print(f"\n[bold green]Done.[/] {len(written)} ad(s) written to [green]{output}[/]")
+    console.print(f"\n[bold green]Done.[/] {len(written)} ad(s) written to [green]{output_dir}[/]")
 
 
 if __name__ == "__main__":
-    app()
+    main()

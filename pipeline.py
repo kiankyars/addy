@@ -8,15 +8,13 @@ from dataclasses import dataclass, field
 
 from interface import (
     get_youtube_transcript,
-    load_sponsors,
+    sponsors_from_config,
     determine_ad_placement,
     generate_advertisements,
     generate_advertisement_audio,
     TranscriptionSegment,
     Advertisement,
 )
-
-DEFAULT_SPONSORS_PATH = Path(__file__).resolve().parent / "config" / "sponsors.json"
 
 
 @dataclass
@@ -49,11 +47,7 @@ def start_job(video_id: str, sponsors_path: str | Path | None = None) -> str:
     return job_id
 
 
-def process_job(
-    job_id: str,
-    sponsors_path: str | Path | None = None,
-    model: str = "claude",
-) -> None:
+def process_job(job_id: str, config: dict) -> None:
     job = _jobs.get(job_id)
     if not job:
         return
@@ -65,18 +59,19 @@ def process_job(
             job.error = "No transcript"
             return
 
-        path = sponsors_path or DEFAULT_SPONSORS_PATH
-        ads = load_sponsors(path)
+        ads = sponsors_from_config(config)
         if not ads:
             job.status = "failed"
             job.error = "No sponsors in config"
             return
 
+        model = config.get("model", "claude")
+        voice_id = config["voice"]
         ad_placements = determine_ad_placement(transcript, ads, model=model)
         for ad_placement in ad_placements:
             for gen_text in generate_advertisements(ad_placement, transcript, model=model):
                 base = gen_text.segue + " " + gen_text.content + " " + gen_text.exit
-                apath = generate_advertisement_audio(base)
+                apath = generate_advertisement_audio(base, voice_id=voice_id)
                 with open(apath, "rb") as f:
                     ad_bytes = f.read()
                 os.remove(apath)

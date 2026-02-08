@@ -1,39 +1,37 @@
 # Addy
 
-Generate podcast-style ad reads from a YouTube video: transcript → placement → copy → TTS. Outputs **one MP3 per sponsor** in your config (e.g. three sponsors → three audio files).
+Generate podcast-style ad reads from a YouTube video: transcript → placement → copy → TTS. Outputs **one MP3 per sponsor** in your config.
 
 ## How it works
 
-1. **Input** — YouTube URL or video ID.
+1. **Input** — YouTube URL or video ID (from config).
 2. **Transcript** — Fetched via `youtube_transcript_api`.
-3. **Ad placement** — LLM (Claude or Gemini) picks where each sponsor fits in the transcript.
-4. **Ad copy** — For each placement, the LLM writes segue, content, and exit in the show’s tone.
-5. **TTS** — Cartesia Sonic turns each ad into an MP3 (default Dwarkesh voice).
+3. **Ad placement** — LLM (Claude or Gemini) picks where each sponsor fits.
+4. **Ad copy** — For each placement, the LLM writes segue, content, and exit.
+5. **TTS** — Cartesia Sonic turns each ad into an MP3 using the voice ID in config.
 
-You get **N ad audio files** (N = number of sponsors in your config). No stitching, no frontend.
+You get **N ad audio files** (N = number of sponsors). No CLI arguments — everything is read from **dwarkesh.json** at runtime.
 
-## Run (CLI)
+## Run
 
 ```bash
 # .env: ANTHROPIC_API_KEY, CARTESIA_API_KEY; for Gemini add GOOGLE_API_KEY
 uv sync
-addy "https://www.youtube.com/watch?v=BYXbuik3dgA"
+addy
 ```
 
-Options: `-o DIR` (output), `--sponsors PATH`, `--model claude|gemini` (default: claude).
+Looks for **dwarkesh.json** in the current directory, then the project root. Writes MP3s to the `output` directory specified in the config.
 
-Examples:
+## Config (dwarkesh.json)
 
-```bash
-addy BYXbuik3dgA -o ./ads
-addy BYXbuik3dgA --model gemini
-addy BYXbuik3dgA --sponsors config/sponsors.json
-```
+All settings in one file:
 
-## Config
-
-`config/sponsors.json` — array of `id`, `url`, `title`, `content`, `tags`.
+- **video** — YouTube URL or video ID.
+- **output** — Directory for ad MP3s (default: `addy_output`).
+- **model** — `claude` or `gemini`.
+- **voice** — Cartesia voice ID for TTS.
+- **sponsors** — Array of `id`, `url`, `title`, `content`, `tags`.
 
 ## Stack
 
-Python 3.11+, uv. LLM: Claude (default) or Gemini 2.0 Flash (`--model gemini`). Cartesia Sonic (TTS).
+Python 3.11+, uv. LLM: Claude or Gemini 2.0 Flash. Cartesia Sonic (TTS).

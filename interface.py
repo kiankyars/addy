@@ -11,7 +11,6 @@ import xml.etree.ElementTree as ET
 import uuid
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from voices import DEFAULT_VOICE_ID
 
 load_dotenv()
 
@@ -52,7 +51,24 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
         return (response.text or "").rstrip()
     raise ValueError(f"Unknown model: {model}")
 
-DEFAULT_SPONSORS_PATH = Path(__file__).resolve().parent / "config" / "sponsors.json"
+def load_config(config_path: str | Path) -> dict:
+    path = Path(config_path)
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def sponsors_from_config(config: dict) -> "list[Advertisement]":
+    sponsors = config.get("sponsors", [])
+    return [
+        Advertisement(
+            id=str(s.get("id", i)),
+            url=str(s.get("url", "")),
+            title=str(s.get("title", "")),
+            content=str(s.get("content", "")),
+            tags=[str(t) for t in s.get("tags", [])],
+        )
+        for i, s in enumerate(sponsors)
+    ]
 
 
 class Advertisement(BaseModel):
@@ -95,22 +111,6 @@ def get_youtube_transcript(video_id: str) -> list[TranscriptionSegment]:
         for i, entry in enumerate(raw)
     ]
 
-
-def load_sponsors(config_path: str | Path | None = None) -> list[Advertisement]:
-    path = Path(config_path or DEFAULT_SPONSORS_PATH)
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    sponsors = data.get("sponsors", data) if isinstance(data, dict) else data
-    return [
-        Advertisement(
-            id=str(s.get("id", i)),
-            url=str(s.get("url", "")),
-            title=str(s.get("title", "")),
-            content=str(s.get("content", "")),
-            tags=[str(t) for t in s.get("tags", [])],
-        )
-        for i, s in enumerate(sponsors)
-    ]
 
 def _determine_ad_placement(
     transcription_segments: list[TranscriptionSegment],
@@ -330,8 +330,11 @@ def generate_advertisements(
 
     return _generate_advertisement_text(ad_placement, surrounding_segments, model)
 
-def generate_advertisement_audio(advertisement_text: str, voice_id: str = None, file_path: str = None) -> str:
-    voice_id = voice_id or os.getenv("CARTESIA_VOICE_ID") or DEFAULT_VOICE_ID
+def generate_advertisement_audio(
+    advertisement_text: str,
+    voice_id: str,
+    file_path: str | None = None,
+) -> str:
     chunks = list(
         cartesia_client.tts.bytes(
             model_id="sonic-2",
