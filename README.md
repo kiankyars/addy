@@ -16,25 +16,21 @@
 ### 1. Backend deps + env
 
 ```bash
-cd server/recorded
 cp sample.env .env
 # Set ANTHROPIC_API_KEY and CARTESIA_API_KEY
-uv pip install -r requirements.txt
+uv sync
 ```
 
 ### 2. Build the UI (once)
 
 ```bash
-cd server/recorded/web
-pnpm install
-pnpm build
+cd web && pnpm install && pnpm build && cd ..
 ```
 
 ### 3. Start the app (API + UI on one port)
 
 ```bash
-cd server/recorded
-uvicorn app:app --host 0.0.0.0 --port 4001
+uv run uvicorn app:app --host 0.0.0.0 --port 4001
 ```
 
 Open http://localhost:4001 — same origin for UI and API.
@@ -47,5 +43,5 @@ Optional: edit `config/sponsors.json` (or pass `sponsors_config` in `POST /proce
 
 | Path | Purpose |
 |------|--------|
-| **server/recorded/** | FastAPI app: API routes + static serve of `web/out`. Pipeline, config, voices. |
-| **server/recorded/web/** | Next.js UI (YouTube input, poll, pick ad, stitch, download). Build with `pnpm build` → `web/out`. |
+| **./** | FastAPI app: API routes + static serve of `web/out`. Pipeline, config, voices. |
+| **web/** | Next.js UI (YouTube input, poll, pick ad, stitch, download). Build with `pnpm build` → `web/out`. |
