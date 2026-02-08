@@ -1,79 +1,84 @@
 "use client";
 
 import { useLocalStorage } from "usehooks-ts";
-import { FileUpIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useDropzone } from "react-dropzone";
 import { GeneratedAd } from "@/lib/types";
 import { sentenceCase } from "change-case";
 
+const VIDEO_ID_RE =
+  /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+
+function extractVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const m = trimmed.match(VIDEO_ID_RE);
+  return m ? m[1] : null;
+}
+
 const Uploader = () => {
-  const [files, setFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processId, setProcessId] = useState(0);
+  const [urlOrId, setUrlOrId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
 
-  const onDrop = async (acceptedFiles: File[]) => {
-    setFiles(() => acceptedFiles);
-    setIsUploading(true);
-
-    const formData = new FormData();
-    formData.append("file", acceptedFiles[0]);
-
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const videoId = extractVideoId(urlOrId);
+    if (!videoId) {
+      return;
+    }
+    setIsSubmitting(true);
     try {
-      const res = await fetch("http://localhost:4001/upload-audio", {
+      const res = await fetch("http://localhost:4001/process", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: videoId }),
       });
-      if (!res.ok) {
-        throw new Error("Failed to upload file");
-      }
-
+      if (!res.ok) throw new Error("Failed to start process");
       const data = await res.json();
-      setIsUploading(false);
-      setIsProcessing(true);
-      setProcessId(data.id);
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      setIsUploading(false);
+      setJobId(data.id);
+    } catch (err) {
+      console.error(err);
+      setIsSubmitting(false);
     }
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      "text/plain": [".mp3"],
-    },
-  });
-
   return (
-    <div
-      {...getRootProps()}
-      className={`cursor-pointer rounded-md w-full border border-dashed border-border bg-background p-8 text-center transition-colors ${
-        isDragActive ? "bg-primary/10" : "hover:border-primary/50"
-      }`}
-    >
-      <input {...getInputProps()} />
-      {isUploading && <p className="mt-2 text-sm">Uploading...</p>}{" "}
-      {!isUploading && !isProcessing && (
-        <>
-          <FileUpIcon className="mx-auto h-8 w-8 stroke-1 text-muted-foreground" />
-          <p className="mt-2 text-sm">Drag and drop podcast audio file here </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Supported format .mp3
-          </p>
-        </>
+    <div className="w-full space-y-4">
+      {!jobId ? (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+          <input
+            type="text"
+            value={urlOrId}
+            onChange={(e) => setUrlOrId(e.target.value)}
+            placeholder="YouTube URL or video ID"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={isSubmitting || !extractVideoId(urlOrId)}
+            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+          >
+            {isSubmitting ? "Starting…" : "Process"}
+          </button>
+        </form>
+      ) : (
+        <Process jobId={jobId} onReset={() => setJobId(null)} />
       )}
-      {isProcessing && <Process processId={processId} />}
     </div>
   );
 };
 
-const Process = ({ processId }: { processId: number }) => {
-  const [status, setStatus] = useState("PENDING");
+const Process = ({
+  jobId,
+  onReset,
+}: {
+  jobId: string;
+  onReset: () => void;
+}) => {
+  const [status, setStatus] = useState("processing");
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-
   const [, setValue] = useLocalStorage<GeneratedAd[] | undefined>(
     "generated_ads",
     undefined
@@ -81,31 +86,40 @@ const Process = ({ processId }: { processId: number }) => {
 
   useEffect(() => {
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:4001/audio_files/${processId}`
-        );
-        if (!res.ok) {
-          throw new Error("Failed to fetch processing status");
-        }
-
-        const data = await res.json();
-        setStatus(data.processing_status);
-
-        if (data.processing_status === "COMPLETE") {
-          clearInterval(interval);
-          setValue(data.generated_ads);
-          router.push(`/generated?audioId=${processId}`);
-        }
-      } catch (error) {
-        console.error("Error fetching processing status:", error);
+      const res = await fetch(`http://localhost:4001/audio_files/${jobId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setStatus(data.processing_status);
+      if (data.error) setError(data.error);
+      if (data.processing_status === "complete") {
+        clearInterval(interval);
+        setValue(data.generated_ads);
+        router.push(`/generated?audioId=${jobId}`);
       }
-    }, 5000);
-
+      if (data.processing_status === "failed") {
+        clearInterval(interval);
+      }
+    }, 2000);
     return () => clearInterval(interval);
-  }, [processId, router]);
+  }, [jobId, router, setValue]);
 
-  return <div>Processing status: {sentenceCase(status)}</div>;
+  return (
+    <div className="space-y-2">
+      <p>
+        Status: {sentenceCase(status)}
+        {error && <span className="text-destructive"> — {error}</span>}
+      </p>
+      {status === "failed" && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="rounded-md border border-border px-3 py-1 text-sm"
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  );
 };
 
 export default Uploader;

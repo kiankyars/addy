@@ -1,0 +1,18 @@
+{
+  "sponsors": [
+    {
+      "id": "dominos",
+      "url": "https://www.dominos.co.in/",
+      "title": "30-Minute Delivery Guarantee",
+      "content": "Domino's 30-minute delivery guarantee. Over 1,250 stores across India, pizza delivery on trains.",
+      "tags": ["pizza", "delivery"]
+    },
+    {
+      "id": "chess",
+      "url": "https://www.chess.com/",
+      "title": "Play Chess Online",
+      "content": "Chess.com: play online with friends or bots, real-time games worldwide.",
+      "tags": ["games"]
+    }
+  ]
+}

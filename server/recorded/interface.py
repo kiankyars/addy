@@ -1,5 +1,5 @@
 import os
-import csv
+from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
 from anthropic import Anthropic
@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 import uuid
 import io
 
-from domain.advertisement import AdvertisementDb
+from youtube_transcript_api import YouTubeTranscriptApi
 from voices import DEFAULT_VOICE_ID
 
 load_dotenv()
@@ -22,8 +22,8 @@ CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 cartesia_client = Cartesia(api_key=CARTESIA_API_KEY)
 
-# Target segment length in seconds (group word timestamps into segments)
-SEGMENT_TARGET_SEC = 8.0
+DEFAULT_SPONSORS_PATH = Path(__file__).resolve().parent / "config" / "sponsors.json"
+
 
 class Advertisement(BaseModel):
     id: str
@@ -32,72 +32,54 @@ class Advertisement(BaseModel):
     content: str
     tags: list[str]
 
+
 class TranscriptionSegment(BaseModel):
     no: int
     start: float
     end: float
     text: str
 
+
 class AdvertisementPlacement(BaseModel):
     transcription_segment: TranscriptionSegment
-    determined_advertisement: AdvertisementDb
+    determined_advertisement: Advertisement
+
 
 class GeneratedAdvertisementText(BaseModel):
     segue: str
     content: str
     exit: str
 
-def transcribe_audio_with_timestamps(file_path: str) -> list[TranscriptionSegment]:
-    print(f"Starting transcription for file: {file_path}")
-    print("Sending to Cartesia STT...")
-    with open(file_path, "rb") as f:
-        response = cartesia_client.stt.transcribe(
-            file=f,
-            model="ink-whisper",
-            language="en",
-            timestamp_granularities=["word"],
+
+def get_youtube_transcript(video_id: str) -> list[TranscriptionSegment]:
+    """Fetch timestamped transcript from YouTube. video_id is the 11-char ID from the URL."""
+    raw = YouTubeTranscriptApi.get_transcript(video_id)
+    return [
+        TranscriptionSegment(
+            no=i,
+            start=float(entry["start"]),
+            end=float(entry["start"]) + float(entry["duration"]),
+            text=entry["text"].strip(),
         )
-    if not getattr(response, "words", None):
-        text = getattr(response, "text", "") or ""
-        duration = getattr(response, "duration", 0.0) or 0.0
-        return [TranscriptionSegment(no=0, start=0.0, end=max(0.1, duration), text=text or "(no speech)")]
-    words = list(response.words)
-    segments: list[TranscriptionSegment] = []
-    seg_start = words[0].start
-    seg_text_parts: list[str] = []
-    for i, w in enumerate(words):
-        seg_text_parts.append(w.word)
-        if (w.end - seg_start) >= SEGMENT_TARGET_SEC or i == len(words) - 1:
-            segments.append(
-                TranscriptionSegment(
-                    no=len(segments),
-                    start=seg_start,
-                    end=w.end,
-                    text=" ".join(seg_text_parts).strip(),
-                )
-            )
-            seg_text_parts = []
-            if i < len(words) - 1:
-                seg_start = words[i + 1].start
-    print(f"Transcription complete: {len(segments)} segments")
-    return segments
+        for i, entry in enumerate(raw)
+    ]
 
 
-def _load_tsv_as_advertisements(file_path: str) -> List[Advertisement]:
-
-    with open(file_path, mode='r', newline='', encoding='utf-8') as file:
-        reader = csv.DictReader(file, delimiter='\t')
-        ads = [
-            Advertisement(
-                id=idx,
-                url=row['URL'],
-                title=row['Title'],
-                content=row['Content'],
-                tags=row['Tags'].split(',')
-            )
-            for idx, row in enumerate(reader)
-        ]
-    return ads
+def load_sponsors(config_path: str | Path | None = None) -> list[Advertisement]:
+    path = Path(config_path or DEFAULT_SPONSORS_PATH)
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    sponsors = data.get("sponsors", data) if isinstance(data, dict) else data
+    return [
+        Advertisement(
+            id=str(s.get("id", i)),
+            url=str(s.get("url", "")),
+            title=str(s.get("title", "")),
+            content=str(s.get("content", "")),
+            tags=[str(t) for t in s.get("tags", [])],
+        )
+        for i, s in enumerate(sponsors)
+    ]
 
 def _determine_ad_placement(transcription_segments: list[TranscriptionSegment], available_ads: list[Advertisement]) -> List[AdvertisementPlacement]:
 
@@ -185,35 +167,6 @@ def determine_ad_placement(transcription_segments: list[TranscriptionSegment], a
     ad_placements = _determine_ad_placement(transcription_segments, available_ads)
 
     return ad_placements
-
-def generate_audio_ad_placement(transcription_segments: list[TranscriptionSegment], filtered_ad_keywords: list[str]):
-    target_ads = _load_tsv_as_advertisements("target_ads.tsv")
-    
-    filtered_ads = [
-        ad for ad in target_ads
-        if any(keyword in ad.tags for keyword in filtered_ad_keywords)
-    ]
-
-    first_matching_ad = filtered_ads[0] if filtered_ads else None
-    if not first_matching_ad:
-        raise ValueError("No matching ads found")
-    
-    pass
-
-
-def load_transcription_segments(transcription_state_path: str) -> List[TranscriptionSegment]:
-    with open(transcription_state_path) as f:
-        data = json.load(f)
-    
-    segments = []
-    for segment in data["transcriptions"]["segments"]:
-        segments.append(TranscriptionSegment(
-            no=segment["no"],
-            start=segment["start"],
-            end=segment["end"], 
-            text=segment["text"]
-        ))
-    return segments
 
 def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText]:
     root = ET.fromstring(xml_content)
