@@ -1,0 +1,9 @@
+[project]
+name = "addy-voice-agent"
+version = "0.1.0"
+description = "Cartesia x Anthropic voice agent (Line SDK)"
+requires-python = ">=3.10"
+dependencies = [
+    "cartesia-line>=0.2.2",
+    "loguru>=0.7.0",
+]
