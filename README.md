@@ -1,37 +1,51 @@
 # Addy
 
-Generate podcast-style ad reads from a YouTube video: transcript → placement → copy → TTS. Outputs **one MP3 per sponsor** in your config.
+Generate podcast-style ad reads from any YouTube video; Addy ingests a transcript, clones the voice, lets claude choose natural ad breaks, writes the ad copy, and voices it with Cartesia TTS.
 
-## How it works
+## Features
+- Transcript to ads in one command: run `addy` and get finished MP3s in your output folder.
+- Dual LLM support: Claude (agentic placement with Exa research) or Gemini for placement/copy.
+- Voice cloning ready: uses a Cartesia voice ID; optional emotion + speed controls per ad.
+- Multi-sponsor aware: loads sponsors from config, places each at most once, skips if no good fit.
+- XML-safe prompting/parsing with fallbacks to handle messy model output.
 
-1. **Input** — YouTube URL or video ID (from config).
-2. **Transcript** — Fetched via `youtube_transcript_api`.
-3. **Ad placement** — LLM (Claude or Gemini) picks where each sponsor fits.
-4. **Ad copy** — For each placement, the LLM writes segue, content, and exit.
-5. **TTS** — Cartesia Sonic turns each ad into an MP3 using the voice ID in config.
+## Requirements
+- Python deps: `uv sync` installs everything.
+- System: `ffmpeg` (brew install ffmpeg).
+- Env: create `.env` (see `sample.env` if present) with `ANTHROPIC_API_KEY`, `CARTESIA_API_KEY`, `GOOGLE_API_KEY`, optional `EXA_API_KEY`.
 
-You get **N ad audio files** (N = number of sponsors). No CLI arguments — everything is read from **dwarkesh.json** at runtime.
-
-## Run
-
+## Quickstart
 ```bash
-# .env: ANTHROPIC_API_KEY, CARTESIA_API_KEY; for Gemini add GOOGLE_API_KEY
 uv sync
-addy
+source .venv/bin/activate
+addy  # reads dwarkesh.json in CWD, then project root
 ```
 
-Looks for **dwarkesh.json** in the current directory, then the project root. Writes MP3s to the `output` directory specified in the config.
+## Configuration (`dwarkesh.json` example)
+```json
+{
+  "video": "https://www.youtube.com/watch?v=BYXbuik3dgA",
+  "output": "output",
+  "model": "gemini",        // "claude" or "gemini"
+  "voice": "<cartesia-voice-id>",
+  "sponsors": [
+    {"id": "acme", "url": "https://acme.com", "title": "Acme", "content": "Short ad blurb", "tags": ["tag1", "tag2"]}
+  ]
+}
+```
+- `video`: full YouTube URL or 11-char ID.
+- `output`: directory for generated MP3s.
+- `model`: LLM choice for placement + copy.
+- `voice`: Cartesia voice ID used for all ads.
+- `sponsors`: array of sponsors; each may include `tags` for better placement.
 
-## Config (dwarkesh.json)
+## Pipeline
+1) **Transcript** — `youtube_transcript_api` fetches timestamped segments.
+2) **Ad placement** — Claude (agentic with optional Exa web research) or Gemini selects segment breaks.
+3) **Ad copy** — LLM writes segue/content/exit + emotion/speed for TTS; picks best of three variations.
+4) **TTS** — Cartesia Sonic 3 renders MP3s using the configured voice; files saved to `output`.
 
-All settings in one file:
-
-- **video** — YouTube URL or video ID.
-- **output** — Directory for ad MP3s (default: `addy_output`).
-- **model** — `claude` or `gemini`.
-- **voice** — Cartesia voice ID for TTS.
-- **sponsors** — Array of `id`, `url`, `title`, `content`, `tags`.
-
-## Stack
-
-Python 3.11+, uv. LLM: Claude or Gemini 2.0 Flash. Cartesia Sonic (TTS).
+## Code map
+- `addy/cli.py` — console entrypoint (`addy`); loads config, kicks off the pipeline, writes MP3s.
+- `pipeline.py` — orchestrates transcript → placement → copy → TTS, tracks job state.
+- `interface.py` — all external calls (LLMs, YouTube, Cartesia) and XML prompt/parse helpers.
