@@ -1,0 +1,64 @@
+{
+  "video_id": "BYXbuik3dgA",
+  "model": "gemini",
+  "output_dir": "output",
+  "ads": [
+    {
+      "file": "output/ad_1_Labelbox.mp3",
+      "sponsor": {
+        "id": "labelbox",
+        "title": "Labelbox",
+        "url": ""
+      },
+      "segment": {
+        "no": 829,
+        "start_min": 84.34266666666667,
+        "end_min": 84.44133333333335,
+        "text": "robots in the simulated world.\nYou use the tens of thousands of"
+      },
+      "script": {
+        "segue": "\nYou use the tens of thousands of",
+        "content": "\nLabelbox can get you robotics and RL data at scale. Labelbox starts by helping you define your ideal data distribution, and then their massive Alignerr network collects frontier-grade data that you can use to train your models. Learn more at https://labelbox.com/dwarkesh\n",
+        "exit": "\nFor your own robotics and RL data needs, visit Labelbox.com/dwarkesh."
+      }
+    },
+    {
+      "file": "output/ad_2_Mercury_Personal_Banking.mp3",
+      "sponsor": {
+        "id": "mercury",
+        "title": "Mercury Personal Banking",
+        "url": ""
+      },
+      "segment": {
+        "no": 1595,
+        "start_min": 165.35866666666666,
+        "end_min": 165.50135,
+        "text": "personally interesting and motivating to do.\nBut going back to the limiting"
+      },
+      "script": {
+        "segue": "\npersonally interesting and motivating to do. Speaking of things that make your life easier and remove friction, let's hear about our sponsor, Mercury.\n",
+        "content": "\nMercury just started offering personal banking! I'm already banking with Mercury for business purposes, so getting to bank with them for my personal life makes everything so much simpler. Apply now at https://mercury.com/personal-banking\n",
+        "exit": "\nThat kind of simplification helps you focus on what's truly motivating. "
+      }
+    },
+    {
+      "file": "output/ad_3_Jane_Street_Puzzle.mp3",
+      "sponsor": {
+        "id": "janestreet",
+        "title": "Jane Street Puzzle",
+        "url": ""
+      },
+      "segment": {
+        "no": 527,
+        "start_min": 51.65466666666667,
+        "end_min": 51.712,
+        "text": "You're giving some verifier that says,\u00a0\n\"Hey, have you solved this puzzle for me?\""
+      },
+      "script": {
+        "segue": "\nSpeaking of puzzles, and genuine verification,",
+        "content": "\nJane Street sent me a new puzzle last week: they trained a neural net, shuffled all 96 layers, and asked me to put them back in order. I tried but\u2026 I didn't quite nail it. If you're curious, or if you think you can do better, you should take a stab at https://janestreet.com/dwarkesh\n",
+        "exit": "\nUnlike that challenge, where you truly need to solve it,"
+      }
+    }
+  ]
+}
