@@ -49,7 +49,11 @@ def start_job(video_id: str, sponsors_path: str | Path | None = None) -> str:
     return job_id
 
 
-def process_job(job_id: str, sponsors_path: str | Path | None = None) -> None:
+def process_job(
+    job_id: str,
+    sponsors_path: str | Path | None = None,
+    model: str = "claude",
+) -> None:
     job = _jobs.get(job_id)
     if not job:
         return
@@ -68,9 +72,9 @@ def process_job(job_id: str, sponsors_path: str | Path | None = None) -> None:
             job.error = "No sponsors in config"
             return
 
-        ad_placements = determine_ad_placement(transcript, ads)
+        ad_placements = determine_ad_placement(transcript, ads, model=model)
         for ad_placement in ad_placements:
-            for gen_text in generate_advertisements(ad_placement, transcript):
+            for gen_text in generate_advertisements(ad_placement, transcript, model=model):
                 base = gen_text.segue + " " + gen_text.content + " " + gen_text.exit
                 apath = generate_advertisement_audio(base)
                 with open(apath, "rb") as f:

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Literal
+
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from cartesia import Cartesia
@@ -16,9 +17,40 @@ load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 cartesia_client = Cartesia(api_key=CARTESIA_API_KEY)
+
+LLM_MODEL = Literal["claude", "gemini"]
+_gemini_model = None
+
+
+def _get_gemini_model():
+    global _gemini_model
+    if _gemini_model is None:
+        import google.generativeai as genai
+        genai.configure(api_key=GOOGLE_API_KEY)
+        _gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+    return _gemini_model
+
+
+def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) -> str:
+    if model == "claude":
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+            stop_sequences=stop_sequences,
+        )
+        return (response.content[0].text or "").rstrip()
+    if model == "gemini":
+        genai = _get_gemini_model()
+        from google.generativeai.types import GenerationConfig
+        config = GenerationConfig(stop_sequences=stop_sequences, max_output_tokens=2048)
+        response = genai.generate_content(prompt, generation_config=config)
+        return (response.text or "").rstrip()
+    raise ValueError(f"Unknown model: {model}")
 
 DEFAULT_SPONSORS_PATH = Path(__file__).resolve().parent / "config" / "sponsors.json"
 
@@ -80,7 +112,11 @@ def load_sponsors(config_path: str | Path | None = None) -> list[Advertisement]:
         for i, s in enumerate(sponsors)
     ]
 
-def _determine_ad_placement(transcription_segments: list[TranscriptionSegment], available_ads: list[Advertisement]) -> List[AdvertisementPlacement]:
+def _determine_ad_placement(
+    transcription_segments: list[TranscriptionSegment],
+    available_ads: list[Advertisement],
+    model: LLM_MODEL,
+) -> List[AdvertisementPlacement]:
 
     transcription_segment_xml = "\n".join([
         f"<transcription_segment no='{segment.no}'>"
@@ -132,14 +168,8 @@ def _determine_ad_placement(transcription_segments: list[TranscriptionSegment], 
     </advertisements>
     """
 
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-        stop_sequences=["</response>"],
-    )
-    xml_response = "<response>" + (response.content[0].text or "").rstrip() + "</response>"
-    print(f"LLM Response for determining ad placement:\n{xml_response}")
+    raw = _llm_completion(prompt, ["</response>"], model)
+    xml_response = "<response>" + raw + "</response>"
     root = ET.fromstring(xml_response)
 
     ad_placements = []
@@ -158,14 +188,12 @@ def _determine_ad_placement(transcription_segments: list[TranscriptionSegment], 
     return ad_placements
 
 
-def determine_ad_placement(transcription_segments: list[TranscriptionSegment], available_ads: list[Advertisement]) -> List[AdvertisementPlacement]:
-    print("Determining ad placement...")
-    print(f"Total transcription segments: {len(transcription_segments)}")
-    print(f"Total available ads: {len(available_ads)}")
-
-    ad_placements = _determine_ad_placement(transcription_segments, available_ads)
-
-    return ad_placements
+def determine_ad_placement(
+    transcription_segments: list[TranscriptionSegment],
+    available_ads: list[Advertisement],
+    model: LLM_MODEL = "claude",
+) -> List[AdvertisementPlacement]:
+    return _determine_ad_placement(transcription_segments, available_ads, model)
 
 def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText]:
     root = ET.fromstring(xml_content)
@@ -179,7 +207,11 @@ def parse_advertisement_xml(xml_content: str) -> List[GeneratedAdvertisementText
 
     return advertisements
 
-def _generate_advertisement_text(ad_placement: AdvertisementPlacement, surrounding_segments: list[TranscriptionSegment]) -> List[GeneratedAdvertisementText]:
+def _generate_advertisement_text(
+    ad_placement: AdvertisementPlacement,
+    surrounding_segments: list[TranscriptionSegment],
+    model: LLM_MODEL,
+) -> List[GeneratedAdvertisementText]:
 
     ad_placement_xml = f"""
 <advertisement_placement>
@@ -279,17 +311,15 @@ the exit of the content
 </example>
 """
     
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-        stop_sequences=["</response>"],
-    )
-    raw = "<response>" + (response.content[0].text or "").rstrip() + "</response>"
-    return parse_advertisement_xml(raw)
-    
+    raw = _llm_completion(prompt, ["</response>"], model)
+    return parse_advertisement_xml("<response>" + raw + "</response>")
 
-def generate_advertisements(ad_placement: AdvertisementPlacement, transcription_segments: list[TranscriptionSegment]) -> List[GeneratedAdvertisementText]:  
+
+def generate_advertisements(
+    ad_placement: AdvertisementPlacement,
+    transcription_segments: list[TranscriptionSegment],
+    model: LLM_MODEL = "claude",
+) -> List[GeneratedAdvertisementText]:  
     surrounding_segments = []
     segment_nos = {segment.no: segment for segment in transcription_segments}
 
@@ -298,9 +328,7 @@ def generate_advertisements(ad_placement: AdvertisementPlacement, transcription_
         if target_no in segment_nos:
             surrounding_segments.append(segment_nos[target_no])
 
-    advertisement_texts = _generate_advertisement_text(ad_placement, surrounding_segments)
-
-    return advertisement_texts
+    return _generate_advertisement_text(ad_placement, surrounding_segments, model)
 
 def generate_advertisement_audio(advertisement_text: str, voice_id: str = None, file_path: str = None) -> str:
     voice_id = voice_id or os.getenv("CARTESIA_VOICE_ID") or DEFAULT_VOICE_ID

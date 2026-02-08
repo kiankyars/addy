@@ -6,8 +6,8 @@ Generate podcast-style ad reads from a YouTube video: transcript → placement �
 
 1. **Input** — YouTube URL or video ID.
 2. **Transcript** — Fetched via `youtube_transcript_api`.
-3. **Ad placement** — Claude picks where each sponsor fits in the transcript.
-4. **Ad copy** — For each placement, Claude writes segue, content, and exit in the show’s tone.
+3. **Ad placement** — LLM (Claude or Gemini) picks where each sponsor fits in the transcript.
+4. **Ad copy** — For each placement, the LLM writes segue, content, and exit in the show’s tone.
 5. **TTS** — Cartesia Sonic turns each ad into an MP3 (default Dwarkesh voice).
 
 You get **N ad audio files** (N = number of sponsors in your config). No stitching, no frontend.
@@ -15,26 +15,25 @@ You get **N ad audio files** (N = number of sponsors in your config). No stitchi
 ## Run (CLI)
 
 ```bash
-# .env with ANTHROPIC_API_KEY and CARTESIA_API_KEY
+# .env: ANTHROPIC_API_KEY, CARTESIA_API_KEY; for Gemini add GOOGLE_API_KEY
 uv sync
 addy "https://www.youtube.com/watch?v=BYXbuik3dgA"
 ```
 
-Ads are written to `addy_output/` by default. Options:
+Options: `-o DIR` (output), `--sponsors PATH`, `--model claude|gemini` (default: claude).
 
-- `-o DIR` — output directory (default: `addy_output`)
-- `--sponsors PATH` — sponsors JSON (default: `config/sponsors.json`)
-
-Example:
+Examples:
 
 ```bash
-addy BYXbuik3dgA -o ./ads --sponsors config/sponsors.json
+addy BYXbuik3dgA -o ./ads
+addy BYXbuik3dgA --model gemini
+addy BYXbuik3dgA --sponsors config/sponsors.json
 ```
 
 ## Config
 
-`config/sponsors.json` — array of `id`, `url`, `title`, `content`, `tags`. Default three: Mercury, Jane Street, Labelbox.
+`config/sponsors.json` — array of `id`, `url`, `title`, `content`, `tags`.
 
 ## Stack
 
-Python 3.11+, uv. Anthropic (placement + copy), Cartesia Sonic (TTS). No DB, no server.
+Python 3.11+, uv. LLM: Claude (default) or Gemini 2.0 Flash (`--model gemini`). Cartesia Sonic (TTS).
