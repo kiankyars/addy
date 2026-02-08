@@ -1,7 +1,7 @@
 {
   "video": "https://www.youtube.com/watch?v=BYXbuik3dgA",
-  "output": "addy_output",
-  "model": "claude",
+  "output": "output",
+  "model": "gemini",
   "voice": "17523c4f-8ab7-43e1-9159-bc52487d77ad",
   "sponsors": [
     {"id": "mercury", "url": "https://mercury.com/personal-banking", "title": "Mercury Personal Banking", "content": "Mercury just started offering personal banking! I'm already banking with Mercury for business purposes, so getting to bank with them for my personal life makes everything so much simpler. Apply now at https://mercury.com/personal-banking", "tags": ["banking", "personal", "finance"]},
