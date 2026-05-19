@@ -62,7 +62,7 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
             max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             contents=prompt,
             config=config,
         )
