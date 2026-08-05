@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Literal
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from anthropic import Anthropic
 from cartesia import Cartesia
 from pydantic import BaseModel
@@ -12,6 +12,22 @@ from xml.sax.saxutils import escape as xml_escape
 import uuid
 
 from youtube_transcript_api import YouTubeTranscriptApi
+
+HOME_ENV_PATH = Path.home() / ".env"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+
+
+def configured_gemini_model() -> str:
+    """Resolve the Gemini model from the shell, ~/.env, or the legacy default."""
+    shell_model = os.environ.get("GEMINI_MODEL", "").strip()
+    if shell_model:
+        return shell_model
+
+    home_model = str(dotenv_values(HOME_ENV_PATH).get("GEMINI_MODEL") or "").strip()
+    return home_model or DEFAULT_GEMINI_MODEL
+
+
+GEMINI_MODEL = configured_gemini_model()
 
 load_dotenv()
 
@@ -62,7 +78,7 @@ def _llm_completion(prompt: str, stop_sequences: list[str], model: LLM_MODEL) ->
             max_output_tokens=4096,
         )
         response = client.models.generate_content(
-            model="gemini-3.5-flash",
+            model=GEMINI_MODEL,
             contents=prompt,
             config=config,
         )

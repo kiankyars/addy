@@ -13,6 +13,7 @@ Generate podcast-style ad reads from any YouTube video; Addy ingests a transcrip
 - Python deps: `uv sync` installs everything.
 - System: `ffmpeg` (brew install ffmpeg).
 - Env: create `.env` (see `sample.env` if present) with `ANTHROPIC_API_KEY`, `CARTESIA_API_KEY`, `GOOGLE_API_KEY`, optional `EXA_API_KEY`.
+- Gemini model: shell `GEMINI_MODEL`, then `GEMINI_MODEL` in `~/.env`, then the legacy `gemini-3.5-flash` default.
 
 ## Quickstart
 ```bash
